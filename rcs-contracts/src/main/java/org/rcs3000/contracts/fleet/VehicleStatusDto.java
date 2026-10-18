@@ -43,7 +43,10 @@ public record VehicleStatusDto(
     public record ActionStatus(String actionId, String actionType, String status, String resultDescription) {
     }
 
-    /** @param level WARNING or FATAL */
-    public record VehicleError(String errorType, String level, String description) {
+    /**
+     * @param level   WARNING or FATAL
+     * @param orderId the order the error refers to, if the vehicle named one
+     */
+    public record VehicleError(String errorType, String level, String description, String orderId) {
     }
 }

@@ -19,7 +19,8 @@
 | `rcs-protocol-vda5050` | VDA 5050 v2.1 报文模型、编解码、主题、MQTT 收发（车端 `AgvClient` / 主控端 `MasterClient`） | 可用 |
 | `rcs-simulator` | AGV 模拟器：多车运动、订单接收与更新、动作、电量、暂停 / 取消 / 重定位 | 可用；车辆增删接口、故障注入待做 |
 | `rcs-fleet` | 机器人控制：自动发现车辆、在线 / 心跳判定、下发路线与更新、暂停 / 恢复 / 取消 / 重定位、状态缓存与事件 | 可用；报文日志、订单一致性告警待做 |
-| `rcs-traffic` / `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
+| `rcs-traffic` | 路径规划与交通管制：A*（含转向代价）、点位 / 路径 / 互斥区预约、逐段放行、等待与绕行、死锁检测、重启后接管 | 可用；碰撞包络（TRF-14）、死锁主动解除（TRF-16）待做 |
+| `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
 
 服务端口：gateway 8080（规划）· resource 8081 · dispatch 8082（规划）· fleet 8083 · traffic 8084（规划）· simulator 8090
 
@@ -83,6 +84,28 @@ curl -X POST localhost:8083/api/fleet/v1/vehicles/AGV-001/pause   # 还有 resum
 ```
 
 下发路线的接口是内部接口：正式流程中由交通管制服务规划并预约路线后调用，不经网关对外开放。
+
+### 完整链路演示（地图 → 交通管制 → fleet → 模拟车）
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d
+./mvnw install -DskipTests
+
+java -jar rcs-resource/target/rcs-resource-0.1.0-SNAPSHOT.jar &
+deploy/examples/setup-demo-map.sh                     # 发布 3x3 演示地图 DEMO
+java -jar rcs-simulator/target/rcs-simulator-0.1.0-SNAPSHOT-exec.jar \
+     '--rcs.simulator.map.code=DEMO' \
+     '--rcs.simulator.vehicles[0].serial-number=AGV-001' '--rcs.simulator.vehicles[0].initial-point=P10' \
+     '--rcs.simulator.vehicles[1].serial-number=AGV-002' '--rcs.simulator.vehicles[1].initial-point=P01' &
+java -jar rcs-fleet/target/rcs-fleet-0.1.0-SNAPSHOT-exec.jar &
+java -jar rcs-traffic/target/rcs-traffic-0.1.0-SNAPSHOT.jar &
+
+# 两车在 P11 交叉：后到的一台会在路口外等待
+curl -X POST localhost:8084/api/traffic/v1/routes -H 'Content-Type: application/json' -d '{"vehicleCode":"AGV-001","targetPoint":"P12"}'
+curl -X POST localhost:8084/api/traffic/v1/routes -H 'Content-Type: application/json' -d '{"vehicleCode":"AGV-002","targetPoint":"P21"}'
+curl localhost:8084/api/traffic/v1/routes          # 路线与进度
+curl localhost:8084/api/traffic/v1/reservations    # 当前预约
+```
 
 ## 代码约定
 

@@ -33,6 +33,7 @@
         <module>rcs-protocol-vda5050</module>
         <module>rcs-simulator</module>
         <module>rcs-fleet</module>
+        <module>rcs-traffic</module>
     </modules>
 
     <properties>

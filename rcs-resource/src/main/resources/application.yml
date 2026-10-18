@@ -9,6 +9,10 @@ spring:
     url: jdbc:postgresql://${RCS_DB_HOST:localhost}:${RCS_DB_PORT:5432}/${RCS_DB_NAME:rcs}?currentSchema=resource&stringtype=unspecified
     username: ${RCS_RESOURCE_DB_USER:rcs_resource}
     password: ${RCS_RESOURCE_DB_PASSWORD:rcs_resource}
+  data:
+    redis:
+      host: ${RCS_VALKEY_HOST:localhost}
+      port: ${RCS_VALKEY_PORT:6379}
   flyway:
     schemas: resource
     default-schema: resource

@@ -1,0 +1,146 @@
+{
+ "revision": 0,
+ "points": [
+  {
+   "code": "P00",
+   "x": 0.0,
+   "y": 0.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P01",
+   "x": 4.0,
+   "y": 0.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P02",
+   "x": 8.0,
+   "y": 0.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P10",
+   "x": 0.0,
+   "y": 4.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P11",
+   "x": 4.0,
+   "y": 4.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P12",
+   "x": 8.0,
+   "y": 4.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P20",
+   "x": 0.0,
+   "y": 8.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P21",
+   "x": 4.0,
+   "y": 8.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "P22",
+   "x": 8.0,
+   "y": 8.0,
+   "type": "NORMAL"
+  },
+  {
+   "code": "CH1",
+   "x": -4.0,
+   "y": 0.0,
+   "type": "CHARGING"
+  }
+ ],
+ "paths": [
+  {
+   "code": "P00-P01",
+   "fromPoint": "P00",
+   "toPoint": "P01",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P00-P10",
+   "fromPoint": "P00",
+   "toPoint": "P10",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P01-P02",
+   "fromPoint": "P01",
+   "toPoint": "P02",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P01-P11",
+   "fromPoint": "P01",
+   "toPoint": "P11",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P02-P12",
+   "fromPoint": "P02",
+   "toPoint": "P12",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P10-P11",
+   "fromPoint": "P10",
+   "toPoint": "P11",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P10-P20",
+   "fromPoint": "P10",
+   "toPoint": "P20",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P11-P12",
+   "fromPoint": "P11",
+   "toPoint": "P12",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P11-P21",
+   "fromPoint": "P11",
+   "toPoint": "P21",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P12-P22",
+   "fromPoint": "P12",
+   "toPoint": "P22",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P20-P21",
+   "fromPoint": "P20",
+   "toPoint": "P21",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "P21-P22",
+   "fromPoint": "P21",
+   "toPoint": "P22",
+   "direction": "BIDIRECTIONAL"
+  },
+  {
+   "code": "CH1-P00",
+   "fromPoint": "CH1",
+   "toPoint": "P00",
+   "direction": "BIDIRECTIONAL"
+  }
+ ],
+ "areas": []
+}

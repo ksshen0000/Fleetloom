@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -29,12 +30,18 @@ class MapIntegrationTest {
     @Container
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine");
 
+    @Container
+    @SuppressWarnings("resource")
+    static final GenericContainer<?> VALKEY = new GenericContainer<>("valkey/valkey:8.1-alpine").withExposedPorts(6379);
+
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url",
                 () -> POSTGRES.getJdbcUrl() + "&currentSchema=resource&stringtype=unspecified");
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.data.redis.host", VALKEY::getHost);
+        registry.add("spring.data.redis.port", () -> VALKEY.getMappedPort(6379));
     }
 
     private static final String BASE = "/api/resource/v1/maps";
@@ -62,6 +69,9 @@ class MapIntegrationTest {
     @Autowired
     private MockMvc mvc;
 
+    @Autowired
+    private org.springframework.data.redis.core.StringRedisTemplate redis;
+
     @Test
     void fullMapLifecycle() throws Exception {
         mvc.perform(post(BASE).contentType(MediaType.APPLICATION_JSON).content("""
@@ -83,6 +93,13 @@ class MapIntegrationTest {
 
         mvc.perform(post(BASE + "/IT1/versions/1/publish").header("X-User-Name", "alice"))
                 .andExpect(status().isOk());
+
+        // other services learn about the new version through the event bus
+        var published = redis.opsForStream().range(
+                org.rcs3000.common.event.valkey.ValkeyEventBus.streamKey("MapPublished"),
+                org.springframework.data.domain.Range.unbounded());
+        org.assertj.core.api.Assertions.assertThat(published).anySatisfy(r ->
+                org.assertj.core.api.Assertions.assertThat(r.getValue().toString()).contains("IT1"));
 
         mvc.perform(get(BASE + "/IT1/active"))
                 .andExpect(status().isOk())

@@ -130,7 +130,7 @@ public final class VehicleSession {
                         .toList(),
                 s == null ? List.of() : s.errors().stream()
                         .map(e -> new VehicleStatusDto.VehicleError(e.errorType(), e.errorLevel().name(),
-                                e.errorDescription()))
+                                e.errorDescription(), reference(e, "orderId")))
                         .toList());
     }
 
@@ -141,6 +141,14 @@ public final class VehicleSession {
         ConnectionStatus previous = connection;
         connection = next;
         return Optional.of(new VehicleConnectionChangedEvent(code, previous, next, reason, now));
+    }
+
+    private static String reference(org.rcs3000.vda5050.v2.AgvError error, String key) {
+        if (error.errorReferences() == null) {
+            return null;
+        }
+        return error.errorReferences().stream().filter(r -> key.equals(r.referenceKey()))
+                .map(org.rcs3000.vda5050.v2.ErrorReference::referenceValue).findFirst().orElse(null);
     }
 
     private static double nz(Double value) {
