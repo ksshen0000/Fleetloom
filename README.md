@@ -16,7 +16,8 @@
 | `rcs-common` | 统一响应、错误码、全局异常处理 | 可用 |
 | `rcs-contracts` | 服务间契约：DTO、枚举、事件（纯 Java） | 地图部分可用 |
 | `rcs-resource` | 基础资源服务：地图、库位、载具、车辆档案、用户 | 地图模块可用 |
-| `rcs-protocol-vda5050` / `rcs-simulator` / `rcs-fleet` / `rcs-traffic` / `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
+| `rcs-protocol-vda5050` | VDA 5050 v2.1 报文模型、编解码、主题、MQTT 收发（车端 `AgvClient` / 主控端 `MasterClient`） | 可用 |
+| `rcs-simulator` / `rcs-fleet` / `rcs-traffic` / `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
 
 ## 本地开发
 
