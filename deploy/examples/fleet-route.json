@@ -1,0 +1,13 @@
+{
+  "mapCode": "",
+  "nodes": [
+    {"pointCode": "A", "x": 0, "y": 0, "released": true},
+    {"pointCode": "B", "x": 5, "y": 0, "released": true,
+     "actions": [{"actionType": "pick", "parameters": {"loadId": "PALLET-1"}}]},
+    {"pointCode": "C", "x": 5, "y": 5, "released": true}
+  ],
+  "edges": [
+    {"pathCode": "AB", "released": true},
+    {"pathCode": "BC", "released": true}
+  ]
+}

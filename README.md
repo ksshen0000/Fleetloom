@@ -13,12 +13,15 @@
 
 | 模块 | 说明 | 状态 |
 | --- | --- | --- |
-| `rcs-common` | 统一响应、错误码、全局异常处理 | 可用 |
-| `rcs-contracts` | 服务间契约：DTO、枚举、事件（纯 Java） | 地图部分可用 |
+| `rcs-common` | 统一响应、错误码、全局异常处理、服务间事件总线（Valkey Streams） | 可用 |
+| `rcs-contracts` | 服务间契约：DTO、枚举、事件（纯 Java） | 地图、车辆部分可用 |
 | `rcs-resource` | 基础资源服务：地图、库位、载具、车辆档案、用户 | 地图模块可用 |
 | `rcs-protocol-vda5050` | VDA 5050 v2.1 报文模型、编解码、主题、MQTT 收发（车端 `AgvClient` / 主控端 `MasterClient`） | 可用 |
 | `rcs-simulator` | AGV 模拟器：多车运动、订单接收与更新、动作、电量、暂停 / 取消 / 重定位 | 可用；车辆增删接口、故障注入待做 |
-| `rcs-fleet` / `rcs-traffic` / `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
+| `rcs-fleet` | 机器人控制：自动发现车辆、在线 / 心跳判定、下发路线与更新、暂停 / 恢复 / 取消 / 重定位、状态缓存与事件 | 可用；报文日志、订单一致性告警待做 |
+| `rcs-traffic` / `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
+
+服务端口：gateway 8080（规划）· resource 8081 · dispatch 8082（规划）· fleet 8083 · traffic 8084（规划）· simulator 8090
 
 ## 本地开发
 
@@ -67,6 +70,19 @@ curl localhost:8090/api/simulator/v1/vehicles
 ```
 
 模拟器不做避让：两台车会互相穿过，防碰撞是交通管制服务的职责。
+
+### 通过 fleet 控制车辆
+
+```bash
+./mvnw -pl rcs-fleet spring-boot:run          # http://localhost:8083，需 Mosquitto 与 Valkey
+
+curl localhost:8083/api/fleet/v1/vehicles     # 已发现的车辆及实时状态
+curl -X POST localhost:8083/api/fleet/v1/vehicles/AGV-001/orders \
+     -H 'Content-Type: application/json' -d @deploy/examples/fleet-route.json
+curl -X POST localhost:8083/api/fleet/v1/vehicles/AGV-001/pause   # 还有 resume / cancel-order / relocate
+```
+
+下发路线的接口是内部接口：正式流程中由交通管制服务规划并预约路线后调用，不经网关对外开放。
 
 ## 代码约定
 

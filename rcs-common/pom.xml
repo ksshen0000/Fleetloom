@@ -12,9 +12,23 @@
 
     <artifactId>rcs-common</artifactId>
     <name>rcs-common</name>
-    <description>Shared response envelope, error model and web error handling</description>
+    <description>Shared response envelope, error model, web error handling and the inter-service event bus</description>
 
     <dependencies>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- Optional: only services that use the Valkey event bus pull this in -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!-- Optional: only services that are web applications pull these in -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -30,6 +44,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

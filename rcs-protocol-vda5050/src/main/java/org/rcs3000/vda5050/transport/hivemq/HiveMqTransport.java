@@ -81,7 +81,13 @@ public final class HiveMqTransport implements MqttTransport {
 
     @Override
     public void publish(String topic, byte[] payload, Qos qos, boolean retained) {
-        requireStarted().publishWith()
+        Mqtt5AsyncClient c = requireStarted();
+        if (!c.getState().isConnected()) {
+            // The disconnect itself is logged once; dropping messages while offline is expected
+            log.debug("dropping message to {}: not connected", topic);
+            return;
+        }
+        c.publishWith()
                 .topic(topic)
                 .payload(payload)
                 .qos(toMqtt(qos))
@@ -111,8 +117,14 @@ public final class HiveMqTransport implements MqttTransport {
 
     @Override
     public void close() {
-        if (client != null && client.getState().isConnectedOrReconnect()) {
+        if (client == null || !client.getState().isConnectedOrReconnect()) {
+            return;
+        }
+        try {
             await(client.disconnect(), "disconnect");
+        } catch (IllegalStateException e) {
+            // Broker already gone (e.g. while reconnecting); nothing left to close cleanly
+            log.debug("MQTT client {} could not disconnect cleanly: {}", clientId, e.getMessage());
         }
     }
 

@@ -32,6 +32,7 @@
         <module>rcs-resource</module>
         <module>rcs-protocol-vda5050</module>
         <module>rcs-simulator</module>
+        <module>rcs-fleet</module>
     </modules>
 
     <properties>
