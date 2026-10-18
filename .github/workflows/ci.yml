@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      # Unit, slice, architecture and Testcontainers integration tests
+      - name: Build and test
+        run: ./mvnw -B verify
+      - name: License check and SBOM
+        run: ./mvnw -B -Plicense-check verify -DskipTests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: '**/target/classes/META-INF/sbom/*.cdx.json'
+
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every commit is signed off (DCO)
+        run: |
+          missing=$(git log --format='%H %(trailers:key=Signed-off-by,valueonly)' \
+            origin/${{ github.base_ref }}..HEAD | awk 'NF==1 {print $1}')
+          if [ -n "$missing" ]; then
+            echo "Commits without Signed-off-by (use git commit -s):"; echo "$missing"; exit 1
+          fi

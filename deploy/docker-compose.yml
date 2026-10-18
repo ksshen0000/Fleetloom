@@ -1,0 +1,40 @@
+# Development infrastructure for RCS3000.
+#   docker compose -f deploy/docker-compose.yml up -d
+# Credentials here are for local development only.
+name: rcs3000
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: rcs
+      POSTGRES_USER: rcs_admin
+      POSTGRES_PASSWORD: rcs_admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rcs_admin -d rcs"]
+      interval: 5s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+volumes:
+  postgres-data:

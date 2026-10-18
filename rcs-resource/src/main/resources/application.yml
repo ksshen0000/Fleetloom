@@ -1,0 +1,27 @@
+server:
+  port: ${RCS_RESOURCE_PORT:8081}
+
+spring:
+  application:
+    name: rcs-resource
+  datasource:
+    # stringtype=unspecified lets PostgreSQL cast JSON strings into jsonb columns
+    url: jdbc:postgresql://${RCS_DB_HOST:localhost}:${RCS_DB_PORT:5432}/${RCS_DB_NAME:rcs}?currentSchema=resource&stringtype=unspecified
+    username: ${RCS_RESOURCE_DB_USER:rcs_resource}
+    password: ${RCS_RESOURCE_DB_PASSWORD:rcs_resource}
+  flyway:
+    schemas: resource
+    default-schema: resource
+    create-schemas: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
