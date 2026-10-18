@@ -163,6 +163,24 @@ public class MapApplicationService {
         return MapDtoMapper.toTopology(code, requireVersion(map, map.getActiveVersionNo()));
     }
 
+    /**
+     * A point of the map's active version; empty if the map has no published version or not this point.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<org.rcs3000.contracts.map.PointDto> findActivePoint(String mapCode, String pointCode) {
+        return maps.findByCode(mapCode)
+                .filter(RcsMap::hasBeenPublished)
+                .flatMap(m -> versions.find(m.getId(), m.getActiveVersionNo()))
+                .flatMap(v -> v.getContent().points().stream().filter(p -> p.code().equals(pointCode)).findFirst())
+                .map(p -> new org.rcs3000.contracts.map.PointDto(p.code(), p.x(), p.y(), p.theta(), p.type(), p.properties()));
+    }
+
+    /** Whether the map exists and has a published version. */
+    @Transactional(readOnly = true)
+    public boolean isPublished(String mapCode) {
+        return maps.findByCode(mapCode).map(RcsMap::hasBeenPublished).orElse(false);
+    }
+
     private RcsMap requireMap(String code) {
         return maps.findByCode(code)
                 .orElseThrow(() -> new BizException(MapErrorCode.MAP_NOT_FOUND, "map '%s' not found".formatted(code)));
