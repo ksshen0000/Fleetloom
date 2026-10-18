@@ -1,0 +1,114 @@
+package org.rcs3000.simulator.app;
+
+import static org.awaitility.Awaitility.await;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.rcs3000.vda5050.client.MasterClient;
+import org.rcs3000.vda5050.client.MasterListener;
+import org.rcs3000.vda5050.client.VehicleId;
+import org.rcs3000.vda5050.transport.hivemq.HiveMqTransport;
+import org.rcs3000.vda5050.v2.Edge;
+import org.rcs3000.vda5050.v2.Header;
+import org.rcs3000.vda5050.v2.Node;
+import org.rcs3000.vda5050.v2.NodePosition;
+import org.rcs3000.vda5050.v2.Order;
+import org.rcs3000.vda5050.v2.State;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.images.builder.Transferable;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+/**
+ * The simulator application against a real Mosquitto: fleet control sends an order over MQTT and
+ * watches the vehicle drive it. Skipped when Docker is not available.
+ */
+@SpringBootTest(properties = {
+        "rcs.simulator.vehicles[0].serial-number=SIM-1",
+        "rcs.simulator.vehicles[0].x=0",
+        "rcs.simulator.vehicles[0].y=0",
+        "rcs.simulator.time-scale=10"
+})
+@AutoConfigureMockMvc
+@Testcontainers(disabledWithoutDocker = true)
+class SimulatorApplicationIntegrationTest {
+
+    @Container
+    @SuppressWarnings("resource")
+    static final GenericContainer<?> MOSQUITTO = new GenericContainer<>("eclipse-mosquitto:2")
+            .withCopyToContainer(Transferable.of("listener 1883\nallow_anonymous true\n"),
+                    "/mosquitto/config/mosquitto.conf")
+            .withExposedPorts(1883);
+
+    @DynamicPropertySource
+    static void mqtt(DynamicPropertyRegistry registry) {
+        registry.add("rcs.simulator.mqtt.host", MOSQUITTO::getHost);
+        registry.add("rcs.simulator.mqtt.port", () -> MOSQUITTO.getMappedPort(1883));
+    }
+
+    @Autowired
+    private MockMvc mvc;
+
+    private MasterClient fleet;
+
+    @AfterEach
+    void tearDown() {
+        if (fleet != null) {
+            fleet.close();
+        }
+    }
+
+    @Test
+    void drivesAnOrderSentOverMqtt() throws Exception {
+        List<State> states = new CopyOnWriteArrayList<>();
+        fleet = new MasterClient(new HiveMqTransport(MOSQUITTO.getHost(), MOSQUITTO.getMappedPort(1883), "fleet-it"),
+                "uagv", Clock.systemUTC());
+        fleet.start(new MasterListener() {
+            @Override
+            public void onState(VehicleId vehicle, State state) {
+                states.add(state);
+            }
+        });
+
+        Order order = new Order(Header.UNSTAMPED, "it-1", 0,
+                List.of(new Node("A", 0, null, true, NodePosition.of(0, 0, null, ""), List.of()),
+                        new Node("B", 2, null, true, NodePosition.of(6, 0, null, ""), List.of())),
+                List.of(Edge.of("AB", 1, true, "A", "B", null, null, null)));
+        fleet.sendOrder(new VehicleId("RCS3000-SIM", "SIM-1"), order);
+
+        // 6 m at 1.5 m/s max with 0.5 m/s² ramps takes ~7 s of simulated time, under 1 s at 10x
+        await().atMost(Duration.ofSeconds(10)).until(() -> !states.isEmpty()
+                && states.getLast().lastNodeId().equals("B") && !states.getLast().driving());
+
+        mvc.perform(get("/api/simulator/v1/vehicles"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].serialNumber").value("SIM-1"))
+                .andExpect(jsonPath("$.data[0].lastNodeId").value("B"))
+                .andExpect(jsonPath("$.data[0].x").value(6.0));
+    }
+
+    @Test
+    void timeScaleCanBeChanged() throws Exception {
+        mvc.perform(put("/api/simulator/v1/time-scale").contentType(MediaType.APPLICATION_JSON).content("{\"value\": 2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").value(2.0));
+        mvc.perform(put("/api/simulator/v1/time-scale").contentType(MediaType.APPLICATION_JSON).content("{\"value\": 10}"))
+                .andExpect(status().isOk());
+    }
+}

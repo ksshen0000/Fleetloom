@@ -17,7 +17,8 @@
 | `rcs-contracts` | 服务间契约：DTO、枚举、事件（纯 Java） | 地图部分可用 |
 | `rcs-resource` | 基础资源服务：地图、库位、载具、车辆档案、用户 | 地图模块可用 |
 | `rcs-protocol-vda5050` | VDA 5050 v2.1 报文模型、编解码、主题、MQTT 收发（车端 `AgvClient` / 主控端 `MasterClient`） | 可用 |
-| `rcs-simulator` / `rcs-fleet` / `rcs-traffic` / `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
+| `rcs-simulator` | AGV 模拟器：多车运动、订单接收与更新、动作、电量、暂停 / 取消 / 重定位 | 可用；车辆增删接口、故障注入待做 |
+| `rcs-fleet` / `rcs-traffic` / `rcs-dispatch` / `rcs-gateway` / `rcs-web` | 见需求文档第 3 节 | 未开始 |
 
 ## 本地开发
 
@@ -48,6 +49,24 @@ docker compose -f deploy/docker-compose.yml up -d
 | POST | `/api/resource/v1/maps/{code}/versions/{no}/validate` | 发布前校验 |
 | POST | `/api/resource/v1/maps/{code}/versions/{no}/publish` | 发布 |
 | GET | `/api/resource/v1/maps/{code}/active` | 当前生效拓扑（含路径长度） |
+
+### 模拟器
+
+```bash
+# 启动模拟器（http://localhost:8090），默认一台车 AGV-001 停在 (0, 0)
+./mvnw -pl rcs-simulator spring-boot:run
+# 或加载已发布的地图，车辆可用 initial-point 放在地图点位上
+RCS_SIM_MAP=WH1 ./mvnw -pl rcs-simulator spring-boot:run
+
+# 手动发一个订单：A(0,0) -> B(5,0) 取货 -> C(5,5)
+docker exec -i rcs3000-mosquitto-1 mosquitto_pub -t uagv/v2/RCS3000-SIM/AGV-001/order -s < deploy/examples/order-a-b-c.json
+
+# 看车的状态
+docker exec rcs3000-mosquitto-1 mosquitto_sub -t 'uagv/v2/RCS3000-SIM/AGV-001/state'
+curl localhost:8090/api/simulator/v1/vehicles
+```
+
+模拟器不做避让：两台车会互相穿过，防碰撞是交通管制服务的职责。
 
 ## 代码约定
 

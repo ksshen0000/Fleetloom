@@ -1,0 +1,20 @@
+{
+  "headerId": 1,
+  "timestamp": "2026-10-18T00:00:00Z",
+  "version": "2.1.0",
+  "manufacturer": "RCS3000-SIM",
+  "serialNumber": "AGV-001",
+  "orderId": "demo-1",
+  "orderUpdateId": 0,
+  "nodes": [
+    {"nodeId": "A", "sequenceId": 0, "released": true, "nodePosition": {"x": 0, "y": 0, "mapId": ""}, "actions": []},
+    {"nodeId": "B", "sequenceId": 2, "released": true, "nodePosition": {"x": 5, "y": 0, "mapId": ""},
+     "actions": [{"actionType": "pick", "actionId": "pick-1", "blockingType": "HARD",
+                  "actionParameters": [{"key": "loadId", "value": "PALLET-1"}]}]},
+    {"nodeId": "C", "sequenceId": 4, "released": true, "nodePosition": {"x": 5, "y": 5, "mapId": ""}, "actions": []}
+  ],
+  "edges": [
+    {"edgeId": "AB", "sequenceId": 1, "released": true, "startNodeId": "A", "endNodeId": "B", "actions": []},
+    {"edgeId": "BC", "sequenceId": 3, "released": true, "startNodeId": "B", "endNodeId": "C", "actions": []}
+  ]
+}
