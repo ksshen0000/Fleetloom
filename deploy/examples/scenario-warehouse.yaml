@@ -1,0 +1,30 @@
+# A warehouse shift on the DEMO map (deploy/examples/setup-demo-*.sh): goods come in at the inbound
+# docks and are stored, stored shelves visit the picking stations and come back, some are shipped
+# from the outbound docks, and storage is tidied up. Run it with
+#   deploy/examples/run-scenario.sh deploy/examples/scenario-warehouse.yaml
+name: warehouse-shift
+timeScale: 4
+maxDuration: 30m
+vehicles:
+  - {serialNumber: WH-01, initialPoint: PARK1, registerAs: JACK}
+  - {serialNumber: WH-02, initialPoint: PARK2, registerAs: JACK}
+  - {serialNumber: WH-03, initialPoint: PARK3, registerAs: JACK}
+orders:
+  # 入库: a truck brings a shelf to a free inbound dock; it is put away in storage
+  - name: inbound
+    every: 25s
+    count: 6
+    type: TRANSPORT
+    arrive: {zone: IN, carrierType: SHELF, prefix: IB, goods: [SKU-APPLE, SKU-MANGO], quantity: 24}
+    targetZone: STORE
+  # 拣选 (goods to person): a stored shelf visits a picking station for 20 s, then goes back
+  - {name: picking, start: 20s, every: 30s, count: 6, type: TRANSPORT, fromZone: STORE, targetZone: PICK,
+     returnAfter: 20s}
+  # 出库: shelves holding the ordered goods are brought to an outbound dock and loaded 15 s later.
+  # As many go out as come in, so the scenario can be run again and again.
+  - {name: outbound apples, start: 40s, every: 35s, count: 3, type: TRANSPORT, fromZone: STORE, sku: SKU-APPLE,
+     targetZone: OUT, depart: 15s}
+  - {name: outbound mangos, start: 60s, every: 35s, count: 3, type: TRANSPORT, fromZone: STORE, sku: SKU-MANGO,
+     targetZone: OUT, depart: 15s}
+  # 移库: storage is rearranged
+  - {name: transfer, start: 60s, every: 60s, count: 3, type: TRANSPORT, fromZone: STORE, targetZone: STORE}

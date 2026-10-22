@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -27,10 +28,12 @@ import org.rcs3000.contracts.fleet.OrderRefDto;
 import org.rcs3000.contracts.fleet.VehicleStateUpdatedEvent;
 import org.rcs3000.contracts.fleet.VehicleStatusDto;
 import org.rcs3000.traffic.core.TestMaps;
+import org.rcs3000.traffic.infra.ValkeySettingStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -78,6 +81,9 @@ class TrafficApplicationIntegrationTest {
     @Autowired
     private RedisConnectionFactory connectionFactory;
 
+    @Autowired
+    private StringRedisTemplate redis;
+
     @Test
     void plansReservesAndSendsTheRouteToTheFleetService() throws Exception {
         try (ValkeyEventBus fleetSide = new ValkeyEventBus(connectionFactory, JSON, "fleet-stub", Clock.systemUTC())) {
@@ -101,6 +107,20 @@ class TrafficApplicationIntegrationTest {
         mvc.perform(post("/api/traffic/v1/costs").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mapCode\": \"TEST\", \"from\": [\"P00\"], \"to\": [\"P02\"]}"))
                 .andExpect(jsonPath("$.data.seconds[0][0]").value(8.0));
+    }
+
+    @Test
+    void parametersChangedAtRuntimeAreKept() throws Exception {
+        mvc.perform(put("/api/traffic/v1/settings").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"lookaheadNodes": 4, "lookaheadDistance": 6.5, "occupiedPenalty": 20,
+                         "blockedEventAfterSeconds": 8, "replanAfterSeconds": 15}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.lookaheadNodes").value(4));
+        mvc.perform(get("/api/traffic/v1/settings"))
+                .andExpect(jsonPath("$.data.lookaheadDistance").value(6.5))
+                .andExpect(jsonPath("$.data.replanAfterSeconds").value(15));
+        assertThat(redis.opsForHash().get(ValkeySettingStore.KEY, "lookaheadNodes")).isEqualTo("4");
     }
 
     private static VehicleStatusDto idleAt(String point) {

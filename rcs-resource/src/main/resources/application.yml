@@ -18,6 +18,14 @@ spring:
     default-schema: resource
     create-schemas: true
 
+rcs:
+  security:
+    # Shared with rcs-gateway; at least 32 bytes. The default is for development only.
+    jwt-secret: ${RCS_JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+    token-ttl: 12h
+    # Password of user "admin", created when the user table is empty
+    initial-admin-password: ${RCS_ADMIN_PASSWORD:admin12345}
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

@@ -6,6 +6,8 @@ import org.rcs3000.common.event.EventBus;
 import org.rcs3000.common.event.valkey.ValkeyEventBus;
 import org.rcs3000.fleet.app.FleetProperties;
 import org.rcs3000.fleet.app.FleetService;
+import org.rcs3000.fleet.app.MessageRecorder;
+import org.rcs3000.fleet.core.MessageLog;
 import org.rcs3000.fleet.core.VehicleStatusCache;
 import org.rcs3000.vda5050.client.MasterClient;
 import org.rcs3000.vda5050.transport.hivemq.HiveMqTransport;
@@ -38,10 +40,17 @@ public class FleetConfiguration {
     }
 
     @Bean
-    FleetService fleetService(FleetProperties properties, EventBus events, VehicleStatusCache cache, Clock clock) {
+    MessageLog messageLog(StringRedisTemplate redis, FleetProperties properties) {
+        return new ValkeyMessageLog(redis, properties.messageLog().retention());
+    }
+
+    @Bean
+    FleetService fleetService(FleetProperties properties, EventBus events, VehicleStatusCache cache,
+            MessageLog messageLog, Clock clock) {
         FleetProperties.Mqtt mqtt = properties.mqtt();
+        MessageRecorder recorder = new MessageRecorder(messageLog, clock, properties.messageLog().stateInterval());
         MasterClient master = new MasterClient(new HiveMqTransport(mqtt.host(), mqtt.port(), mqtt.clientId()),
-                mqtt.interfaceName(), clock);
+                mqtt.interfaceName(), clock, recorder);
         return new FleetService(master, events, cache, clock, properties.heartbeatTimeout());
     }
 

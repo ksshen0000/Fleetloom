@@ -1,7 +1,9 @@
 package org.rcs3000.simulator.app;
 
 import static org.awaitility.Awaitility.await;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,6 +19,7 @@ import org.rcs3000.vda5050.client.MasterClient;
 import org.rcs3000.vda5050.client.MasterListener;
 import org.rcs3000.vda5050.client.VehicleId;
 import org.rcs3000.vda5050.transport.hivemq.HiveMqTransport;
+import org.rcs3000.vda5050.v2.Connection;
 import org.rcs3000.vda5050.v2.Edge;
 import org.rcs3000.vda5050.v2.Header;
 import org.rcs3000.vda5050.v2.Node;
@@ -43,7 +46,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         "rcs.simulator.vehicles[0].serial-number=SIM-1",
         "rcs.simulator.vehicles[0].x=0",
         "rcs.simulator.vehicles[0].y=0",
-        "rcs.simulator.time-scale=10"
+        "rcs.simulator.time-scale=10",
+        "rcs.simulator.restore-vehicles=false"
 })
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
@@ -101,6 +105,55 @@ class SimulatorApplicationIntegrationTest {
                 .andExpect(jsonPath("$.data[0].serialNumber").value("SIM-1"))
                 .andExpect(jsonPath("$.data[0].lastNodeId").value("B"))
                 .andExpect(jsonPath("$.data[0].x").value(6.0));
+    }
+
+    @Test
+    void vehiclesAreAddedAndRemovedAtRuntime() throws Exception {
+        List<String> connections = new CopyOnWriteArrayList<>();
+        fleet = new MasterClient(new HiveMqTransport(MOSQUITTO.getHost(), MOSQUITTO.getMappedPort(1883), "fleet-it-2"),
+                "uagv", Clock.systemUTC());
+        fleet.start(new MasterListener() {
+            @Override
+            public void onConnection(VehicleId vehicle, Connection connection) {
+                connections.add(vehicle.serialNumber() + " " + connection.connectionState());
+            }
+        });
+
+        mvc.perform(post("/api/simulator/v1/vehicles").contentType(MediaType.APPLICATION_JSON).content("""
+                        [{"serialNumber": "SIM-2", "x": 3, "y": 4, "battery": 40},
+                         {"serialNumber": "SIM-3", "x": 0, "y": 8}]
+                        """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].battery").value(40.0))
+                .andExpect(jsonPath("$.data[1].battery").value(100.0));
+        await().atMost(Duration.ofSeconds(10)).until(() -> connections.contains("SIM-2 ONLINE"));
+
+        mvc.perform(post("/api/simulator/v1/vehicles").contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"serialNumber\": \"SIM-2\"}]"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/simulator/v1/vehicles").contentType(MediaType.APPLICATION_JSON)
+                        .content("[{\"serialNumber\": \"bad name\"}]"))
+                .andExpect(status().isBadRequest());
+
+        mvc.perform(delete("/api/simulator/v1/vehicles/SIM-2")).andExpect(status().isOk());
+        mvc.perform(delete("/api/simulator/v1/vehicles/SIM-3")).andExpect(status().isOk());
+        mvc.perform(delete("/api/simulator/v1/vehicles/SIM-2")).andExpect(status().isNotFound());
+        await().atMost(Duration.ofSeconds(10)).until(() -> connections.contains("SIM-2 OFFLINE"));
+        mvc.perform(get("/api/simulator/v1/vehicles"))
+                .andExpect(jsonPath("$.data[?(@.serialNumber == 'SIM-2')]").doesNotExist());
+        // no map configured here
+        mvc.perform(get("/api/simulator/v1/map/points")).andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    void scenariosAreCheckedBeforeTheyRun() throws Exception {
+        mvc.perform(get("/api/simulator/v1/scenarios/current"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/simulator/v1/scenarios").contentType("application/yaml")
+                        .content("orders: [{type: MOVE}]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("targetPoints")));
     }
 
     @Test

@@ -5,6 +5,7 @@ import org.rcs3000.common.error.ErrorCode;
 public enum FleetErrorCode implements ErrorCode {
     VEHICLE_NOT_FOUND(404),
     VEHICLE_NOT_ONLINE(409),
+    VEHICLE_STILL_ONLINE(409),
     NO_ACTIVE_ORDER(409),
     ROUTE_NOT_CONTINUOUS(409),
     INVALID_ROUTE(400);

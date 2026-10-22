@@ -23,6 +23,8 @@ public final class SimulatedAgv {
     private final Queue<Object> inbox = new ConcurrentLinkedQueue<>();
     private double sinceState;
     private double sinceVisualization;
+    /** Seconds of simulated network outage left (SIM-09); nothing is sent or received meanwhile. */
+    private double offlineFor;
 
     /**
      * @param stateInterval          seconds between periodic state messages (events are sent at once)
@@ -42,6 +44,16 @@ public final class SimulatedAgv {
     }
 
     public void step(double dt) {
+        if (offlineFor > 0) {
+            offlineFor -= dt;
+            inbox.clear();
+            vehicle.step(dt);
+            if (offlineFor <= 0) {
+                client.publishState(vehicle.state());
+                sinceState = 0;
+            }
+            return;
+        }
         for (Object message; (message = inbox.poll()) != null; ) {
             if (message instanceof Order order) {
                 vehicle.receiveOrder(order);
@@ -63,6 +75,25 @@ public final class SimulatedAgv {
         if (vehicle.takeFactsheetRequest()) {
             client.publishFactsheet(factsheet);
         }
+    }
+
+    /**
+     * Simulates a network outage: the vehicle keeps doing what it does but neither reports nor hears
+     * anything for {@code seconds}, so the platform sees its heartbeat stop.
+     */
+    public void dropConnection(double seconds) {
+        offlineFor = seconds;
+    }
+
+    /** Ends a simulated outage early. */
+    public void restoreConnection() {
+        if (offlineFor > 0) {
+            offlineFor = Double.MIN_VALUE;
+        }
+    }
+
+    public boolean isConnectionDropped() {
+        return offlineFor > 0;
     }
 
     public void disconnect() {

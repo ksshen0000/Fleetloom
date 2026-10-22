@@ -2,6 +2,7 @@ package org.rcs3000.fleet.core;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,6 +24,9 @@ import org.rcs3000.vda5050.v2.factsheet.Factsheet;
  */
 public final class VehicleSession {
 
+    /** Error type in the status while the vehicle does not take over an order (FLT-06). */
+    public static final String ORDER_OUT_OF_SYNC = "orderOutOfSync";
+
     private final String code;
     private final VehicleId id;
     private final OrderTracker orders = new OrderTracker();
@@ -31,6 +35,11 @@ public final class VehicleSession {
     private Instant lastState;
     private State state;
     private Factsheet factsheet;
+    /** the last order sent that the vehicle has not reported yet (FLT-06) */
+    private Order unconfirmed;
+    private Instant unconfirmedSince;
+    private int resends;
+    private boolean outOfSync;
 
     public VehicleSession(String code, VehicleId id) {
         this.code = code;
@@ -65,6 +74,7 @@ public final class VehicleSession {
         state = message;
         lastSeen = now;
         lastState = now;
+        orders.adoptIfUnknown(message);
         return change(ConnectionStatus.ONLINE, "state received", now);
     }
 
@@ -88,6 +98,46 @@ public final class VehicleSession {
 
     public synchronized Order updateOrder(RouteCommandDto command) {
         return orders.update(command);
+    }
+
+    /** Remembers an order handed to the broker until the vehicle reports it. */
+    public synchronized void orderSent(Order order, Instant now) {
+        unconfirmed = order;
+        unconfirmedSince = now;
+        resends = 0;
+        outOfSync = false;
+    }
+
+    /**
+     * Order consistency (FLT-06): orders go out with QoS 0 and may get lost. If the vehicle has not
+     * reported the last order (id and update id) {@code after} sending it, nor rejected it, the order
+     * is returned to be sent again; vehicles ignore an update they already have. After
+     * {@code maxResends} attempts the vehicle is reported out of sync in its status.
+     */
+    public synchronized Optional<Order> orderToResend(Instant now, Duration after, int maxResends) {
+        Order o = unconfirmed;
+        if (o == null || state == null) {
+            return Optional.empty();
+        }
+        if (o.orderId().equals(state.orderId()) && state.orderUpdateId() >= o.orderUpdateId()) {
+            unconfirmed = null;
+            outOfSync = false;
+            return Optional.empty();
+        }
+        if (state.errors().stream().anyMatch(e -> o.orderId().equals(reference(e, "orderId")))) {
+            unconfirmed = null; // rejected: the error itself tells
+            return Optional.empty();
+        }
+        if (connection != ConnectionStatus.ONLINE || unconfirmedSince.plus(after).isAfter(now)) {
+            return Optional.empty();
+        }
+        if (resends >= maxResends) {
+            outOfSync = true;
+            return Optional.empty();
+        }
+        resends++;
+        unconfirmedSince = now;
+        return Optional.of(o);
     }
 
     public synchronized ConnectionStatus connection() {
@@ -128,10 +178,21 @@ public final class VehicleSession {
                         .map(a -> new VehicleStatusDto.ActionStatus(a.actionId(), a.actionType(),
                                 a.actionStatus().name(), a.resultDescription()))
                         .toList(),
-                s == null ? List.of() : s.errors().stream()
-                        .map(e -> new VehicleStatusDto.VehicleError(e.errorType(), e.errorLevel().name(),
-                                e.errorDescription(), reference(e, "orderId")))
-                        .toList());
+                errors(s));
+    }
+
+    private List<VehicleStatusDto.VehicleError> errors(State s) {
+        List<VehicleStatusDto.VehicleError> errors = new ArrayList<>();
+        if (s != null) {
+            s.errors().forEach(e -> errors.add(new VehicleStatusDto.VehicleError(e.errorType(), e.errorLevel().name(),
+                    e.errorDescription(), reference(e, "orderId"))));
+        }
+        if (outOfSync && unconfirmed != null) {
+            errors.add(new VehicleStatusDto.VehicleError(ORDER_OUT_OF_SYNC, "WARNING",
+                    "vehicle does not report order %s update %d, sent %d times".formatted(unconfirmed.orderId(),
+                            unconfirmed.orderUpdateId(), resends + 1), unconfirmed.orderId()));
+        }
+        return errors;
     }
 
     private Optional<VehicleConnectionChangedEvent> change(ConnectionStatus next, String reason, Instant now) {

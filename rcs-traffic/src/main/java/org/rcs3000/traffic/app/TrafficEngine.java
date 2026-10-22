@@ -10,6 +10,7 @@ import java.util.function.Function;
 
 import org.rcs3000.common.event.EventBus;
 import org.rcs3000.contracts.fleet.VehicleConnectionChangedEvent;
+import org.rcs3000.contracts.fleet.VehicleForgottenEvent;
 import org.rcs3000.contracts.fleet.VehicleStateUpdatedEvent;
 import org.rcs3000.contracts.map.MapPublishedEvent;
 import org.rcs3000.traffic.core.TrafficController;
@@ -38,6 +39,8 @@ public final class TrafficEngine implements AutoCloseable {
                 e -> submit(c -> c.onVehicleStatus(e.payload().status())));
         events.subscribe(VehicleConnectionChangedEvent.TYPE, CONSUMER_GROUP, VehicleConnectionChangedEvent.class,
                 e -> submit(c -> c.onConnectionChanged(e.payload())));
+        events.subscribe(VehicleForgottenEvent.TYPE, CONSUMER_GROUP, VehicleForgottenEvent.class,
+                e -> submit(c -> c.onVehicleForgotten(e.payload().vehicleCode())));
         events.subscribe(MapPublishedEvent.TYPE, CONSUMER_GROUP, MapPublishedEvent.class,
                 e -> submit(c -> c.onMapPublished(e.payload().mapCode())));
         thread.scheduleWithFixedDelay(() -> run(TrafficController::tick), tickMillis, tickMillis, TimeUnit.MILLISECONDS);

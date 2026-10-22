@@ -34,6 +34,8 @@
         <module>rcs-simulator</module>
         <module>rcs-fleet</module>
         <module>rcs-traffic</module>
+        <module>rcs-dispatch</module>
+        <module>rcs-gateway</module>
     </modules>
 
     <properties>

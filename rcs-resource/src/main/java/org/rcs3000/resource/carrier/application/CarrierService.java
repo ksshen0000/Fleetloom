@@ -17,6 +17,8 @@ import org.rcs3000.resource.carrier.domain.CarrierRepository;
 import org.rcs3000.resource.carrier.domain.CarrierStatus;
 import org.rcs3000.resource.carrier.domain.CarrierType;
 import org.rcs3000.resource.carrier.domain.CarrierTypeRepository;
+import org.rcs3000.resource.carrier.domain.Goods;
+import org.rcs3000.resource.carrier.domain.GoodsRepository;
 import org.rcs3000.resource.storage.domain.StorageErrorCode;
 import org.rcs3000.resource.storage.domain.StorageLocation;
 import org.rcs3000.resource.storage.domain.StorageLocationRepository;
@@ -31,14 +33,44 @@ public class CarrierService {
     private final CarrierTypeRepository types;
     private final CarrierRepository carriers;
     private final StorageLocationRepository locations;
+    private final GoodsRepository goods;
     private final Clock clock;
 
     public CarrierService(CarrierTypeRepository types, CarrierRepository carriers, StorageLocationRepository locations,
-            Clock clock) {
+            GoodsRepository goods, Clock clock) {
         this.types = types;
         this.carriers = carriers;
         this.locations = locations;
+        this.goods = goods;
         this.clock = clock;
+    }
+
+    // ------------------------------------------------------------------ goods (CAR-05)
+
+    @Transactional(readOnly = true)
+    public List<Goods> goods(String code) {
+        require(code);
+        return goods.find(code);
+    }
+
+    /** Replaces what is recorded on the carrier; an empty list means it is empty. */
+    public List<Goods> replaceGoods(String code, List<Goods> lines) {
+        require(code);
+        goods.replace(code, lines);
+        return goods.find(code);
+    }
+
+    /** Where goods are: carriers holding a SKU, with the carrier's current place. */
+    @Transactional(readOnly = true)
+    public List<StockedView> findGoods(String skuPrefix, int limit) {
+        return goods.findBySku(skuPrefix, limit).stream().map(s -> {
+            Carrier c = carriers.findByCode(s.carrierCode()).orElse(null);
+            return new StockedView(s.carrierCode(), c == null ? null : c.getLocationType(),
+                    c == null ? null : c.getLocationRef(), s.goods());
+        }).toList();
+    }
+
+    public record StockedView(String carrierCode, CarrierLocationType locationType, String locationRef, Goods goods) {
     }
 
     // ------------------------------------------------------------------ types

@@ -9,12 +9,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.rcs3000.common.error.BizException;
+import org.rcs3000.common.web.ConstraintViolationHandler;
 import org.rcs3000.common.web.GlobalExceptionHandler;
 import org.rcs3000.contracts.fleet.OrderRefDto;
 import org.rcs3000.fleet.app.FleetService;
 import org.rcs3000.fleet.core.FleetErrorCode;
+import org.rcs3000.fleet.core.MessageLog;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -23,7 +28,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(FleetController.class)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, ConstraintViolationHandler.class})
 class FleetControllerTest {
 
     private static final String BASE = "/api/fleet/v1/vehicles";
@@ -33,6 +38,23 @@ class FleetControllerTest {
 
     @MockitoBean
     private FleetService fleet;
+
+    @MockitoBean
+    private MessageLog messages;
+
+    @Test
+    void messagesAreQueriedByVehicleAndTime() throws Exception {
+        Instant from = Instant.parse("2026-10-18T08:00:00Z");
+        when(messages.find("AGV-1", from, null, 50)).thenReturn(List.of(new MessageLog.Entry("1-0",
+                from.plusSeconds(1), "AGV-1", MessageLog.Direction.OUT, "order", "{}")));
+
+        mvc.perform(get(BASE + "/AGV-1/messages").param("from", from.toString()).param("limit", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].direction").value("OUT"))
+                .andExpect(jsonPath("$.data[0].topic").value("order"));
+        mvc.perform(get(BASE + "/AGV-1/messages").param("limit", "0"))
+                .andExpect(status().isBadRequest());
+    }
 
     @Test
     void routeCommandIsPassedThrough() throws Exception {

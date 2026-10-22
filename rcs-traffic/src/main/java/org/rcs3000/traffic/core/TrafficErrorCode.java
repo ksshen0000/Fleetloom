@@ -7,6 +7,7 @@ public enum TrafficErrorCode implements ErrorCode {
     VEHICLE_NOT_ONLINE(409),
     VEHICLE_NOT_ON_NODE(409),
     ROUTE_ACTIVE(409),
+    VEHICLE_BUSY(409),
     NO_ACTIVE_ROUTE(409),
     UNKNOWN_POINT(404),
     NO_ROUTE(422),

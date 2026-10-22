@@ -89,6 +89,25 @@ class ValkeyEventBusIntegrationTest {
     }
 
     @Test
+    void liveSubscriptionSkipsWhatWasPublishedWhileAway() {
+        String type = "Moved-" + System.nanoTime();
+        String key = ValkeyEventBus.streamKey(type);
+        List<Moved> received = new CopyOnWriteArrayList<>();
+        // the group exists from an earlier run and then misses two events, as if its service had been down
+        new StringRedisTemplate(connectionFactory).execute((org.springframework.data.redis.core.RedisCallback<Object>) c ->
+                c.streamCommands().xGroupCreate(key.getBytes(), "push",
+                        org.springframework.data.redis.connection.stream.ReadOffset.latest(), true));
+        publisher.publish(type, new Moved("AGV-1", 1));
+        publisher.publish(type, new Moved("AGV-1", 2));
+
+        consumerB.subscribeLive(type, "push", Moved.class, e -> received.add(e.payload()));
+        publisher.publish(type, new Moved("AGV-1", 3));
+
+        await().atMost(Duration.ofSeconds(5)).until(() -> !received.isEmpty());
+        await().during(Duration.ofMillis(500)).until(() -> received.equals(List.of(new Moved("AGV-1", 3))));
+    }
+
+    @Test
     void failedHandlerLeavesTheEventPending() {
         String type = "Moved-" + System.nanoTime();
         List<Moved> attempts = new CopyOnWriteArrayList<>();

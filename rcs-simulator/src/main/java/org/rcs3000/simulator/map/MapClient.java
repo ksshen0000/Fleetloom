@@ -1,6 +1,7 @@
 package org.rcs3000.simulator.map;
 
 import org.rcs3000.common.api.ApiResponse;
+import org.rcs3000.common.web.HttpClients;
 import org.rcs3000.contracts.map.MapTopologyDto;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.client.RestClient;
@@ -11,7 +12,7 @@ public class MapClient {
     private final RestClient rest;
 
     public MapClient(RestClient.Builder builder, String resourceUrl) {
-        this.rest = builder.baseUrl(resourceUrl).build();
+        this.rest = HttpClients.withTimeouts(builder, resourceUrl).build();
     }
 
     public MapTopologyDto activeTopology(String mapCode) {

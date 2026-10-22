@@ -3,8 +3,13 @@ package org.rcs3000.traffic.api;
 import java.util.List;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import org.rcs3000.common.api.ApiResponse;
 import org.rcs3000.common.error.BizException;
 import org.rcs3000.contracts.fleet.VehicleActionDto;
@@ -13,11 +18,13 @@ import org.rcs3000.contracts.traffic.CostQueryDto;
 import org.rcs3000.contracts.traffic.ReservationDto;
 import org.rcs3000.contracts.traffic.RouteViewDto;
 import org.rcs3000.traffic.app.TrafficEngine;
+import org.rcs3000.traffic.app.TrafficTuning;
 import org.rcs3000.traffic.core.TrafficErrorCode;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,9 +34,30 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrafficApiController {
 
     private final TrafficEngine engine;
+    private final TrafficTuning tuning;
 
-    public TrafficApiController(TrafficEngine engine) {
+    public TrafficApiController(TrafficEngine engine, TrafficTuning tuning) {
         this.engine = engine;
+        this.tuning = tuning;
+    }
+
+    @GetMapping("/settings")
+    public ApiResponse<TrafficTuning.Tunables> settings() {
+        return ApiResponse.ok(tuning.get());
+    }
+
+    /** Changes the reservation and detour parameters (WEB-09). */
+    @PutMapping("/settings")
+    public ApiResponse<TrafficTuning.Tunables> updateSettings(@Valid @RequestBody Settings r) {
+        return ApiResponse.ok(tuning.update(new TrafficTuning.Tunables(r.lookaheadNodes(), r.lookaheadDistance(),
+                r.occupiedPenalty(), r.blockedEventAfterSeconds(), r.replanAfterSeconds())));
+    }
+
+    public record Settings(@NotNull @Min(1) @Max(20) Integer lookaheadNodes,
+            @NotNull @DecimalMin("0") @DecimalMax("100") Double lookaheadDistance,
+            @NotNull @DecimalMin("0") @DecimalMax("3600") Double occupiedPenalty,
+            @NotNull @Min(1) @Max(3600) Long blockedEventAfterSeconds,
+            @NotNull @Min(1) @Max(3600) Long replanAfterSeconds) {
     }
 
     /** Moves a vehicle to a point, e.g. a manual move (VEH-05) or a dispatch step. */

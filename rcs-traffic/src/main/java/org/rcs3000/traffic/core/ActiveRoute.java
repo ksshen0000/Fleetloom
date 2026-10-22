@@ -15,6 +15,8 @@ final class ActiveRoute {
     final Instant createdAt;
     PlannedRoute plan;
     String orderId;
+    /** the vehicle has reported {@link #orderId} as its order at least once */
+    boolean acknowledged;
     int passedIndex;
     int releasedIndex;
     RouteStatus status;

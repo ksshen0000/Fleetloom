@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 import org.rcs3000.common.event.InMemoryEventBus;
 import org.rcs3000.contracts.fleet.OrderRefDto;
 import org.rcs3000.contracts.fleet.RouteCommandDto;
+import org.rcs3000.contracts.fleet.VehicleForgottenEvent;
 import org.rcs3000.contracts.fleet.VehicleStateUpdatedEvent;
 import org.rcs3000.contracts.map.MapTopologyDto;
 import org.rcs3000.contracts.traffic.DeadlockDetectedEvent;
@@ -88,6 +89,8 @@ public final class TrafficHarness {
                 mapCode -> currentMap.get(), events, settings, clock);
         events.subscribe(VehicleStateUpdatedEvent.TYPE, "traffic", VehicleStateUpdatedEvent.class,
                 e -> traffic.onVehicleStatus(e.payload().status()));
+        events.subscribe(VehicleForgottenEvent.TYPE, "traffic", VehicleForgottenEvent.class,
+                e -> traffic.onVehicleForgotten(e.payload().vehicleCode()));
         events.subscribe(RouteProgressedEvent.TYPE, "test", RouteProgressedEvent.class, e -> progress.add(e.payload()));
         events.subscribe(DeadlockDetectedEvent.TYPE, "test", DeadlockDetectedEvent.class, e -> deadlocks.add(e.payload()));
         events.subscribe(TrafficBlockedEvent.TYPE, "test", TrafficBlockedEvent.class, e -> blocked.add(e.payload()));
@@ -103,6 +106,19 @@ public final class TrafficHarness {
         agv.connect();
         engine.add(agv);
         return this;
+    }
+
+    /** Restarts a vehicle: it comes back on the point it last passed, without an order. */
+    public void restartVehicle(String code) {
+        String point = vehicle(code).lastNodeId();
+        engine.remove(code);
+        vehicle(code, point);
+    }
+
+    /** Takes a vehicle off the site and removes it from fleet control, as an operator would. */
+    public void removeVehicle(String code) {
+        engine.remove(code);
+        fleet.forget(code);
     }
 
     public TrafficController traffic() {

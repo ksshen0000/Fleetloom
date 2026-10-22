@@ -99,8 +99,20 @@ public final class VirtualVehicle {
     private final Map<String, AgvError> orderErrors = new LinkedHashMap<>();
     private final Map<String, AgvError> vehicleErrors = new LinkedHashMap<>();
 
+    /** Faults injected for testing (SIM-09), by error type. */
+    private final Map<String, Fault> faults = new LinkedHashMap<>();
+
     private boolean stateEvent = true;
     private boolean factsheetRequested;
+
+    /**
+     * @param remaining seconds until the fault goes away by itself; infinite if it stays until cleared
+     * @param stops     whether the vehicle cannot drive while the fault lasts
+     */
+    private record Fault(AgvError error, double remaining, boolean stops) {
+    }
+
+    public static final String OBSTACLE = "obstacleDetected";
 
     /**
      * @param initialPose     where the vehicle stands, or {@code null} if its position is unknown until an
@@ -344,8 +356,16 @@ public final class VirtualVehicle {
             }
         }
         triggered.removeIf(a -> a.scope != ActionRuntime.Scope.INSTANT);
+        // On an edge, drive on to its end node and stop there (VDA 5050 leaves the choice to the
+        // vehicle): standing on a node, it can be given a new route right away. Its actions are failed.
+        Edge current = currentShape == null ? null : edges.getFirst();
+        Node next = currentShape == null ? null : nodes.getFirst();
         nodes.clear();
         edges.clear();
+        if (current != null) {
+            edges.add(current);
+            nodes.add(next);
+        }
         rotationTarget = null;
         runtime.status = ActionStatus.RUNNING;
         cancelling = runtime;
@@ -380,20 +400,22 @@ public final class VirtualVehicle {
 
     public void step(double dt) {
         updateBattery(dt);
-        if (paused || battery <= 0) {
+        expireFaults(dt);
+        if (paused || battery <= 0 || stoppedByFault()) {
             brake(dt);
             return;
         }
         progressActions(dt);
         startTriggeredActions();
         if (cancelling != null) {
-            brake(dt);
-            if (velocity == 0) {
-                currentShape = null;
-                cancelling.finish(null);
-                cancelling = null;
-                markEvent();
+            if (currentShape != null) {
+                drive(dt);
+                return;
             }
+            velocity = 0;
+            cancelling.finish(null);
+            cancelling = null;
+            markEvent();
             return;
         }
         move(dt);
@@ -686,6 +708,50 @@ public final class VirtualVehicle {
         }
     }
 
+    // ------------------------------------------------------------------ fault injection (SIM-09)
+
+    /**
+     * Reports an error until it is cleared or {@code seconds} have passed ({@code <= 0}: until cleared).
+     * A FATAL error also stops the vehicle, as real vehicles do.
+     */
+    public void injectError(String errorType, ErrorLevel level, String description, double seconds) {
+        faults.put(errorType, new Fault(new AgvError(errorType, null, description, null, level),
+                seconds > 0 ? seconds : Double.POSITIVE_INFINITY, level == ErrorLevel.FATAL));
+        markEvent();
+    }
+
+    /** Something stands in the way: the vehicle stops for {@code seconds} and reports a warning meanwhile. */
+    public void blockByObstacle(double seconds) {
+        faults.put(OBSTACLE, new Fault(new AgvError(OBSTACLE, null, "obstacle in the driving path", null, ErrorLevel.WARNING),
+                seconds > 0 ? seconds : Double.POSITIVE_INFINITY, true));
+        markEvent();
+    }
+
+    public void clearFaults() {
+        if (!faults.isEmpty()) {
+            faults.clear();
+            markEvent();
+        }
+    }
+
+    public List<String> faults() {
+        return List.copyOf(faults.keySet());
+    }
+
+    private void expireFaults(double dt) {
+        if (faults.isEmpty()) {
+            return;
+        }
+        faults.replaceAll((type, f) -> new Fault(f.error(), f.remaining() - dt, f.stops()));
+        if (faults.values().removeIf(f -> f.remaining() <= 0)) {
+            markEvent();
+        }
+    }
+
+    private boolean stoppedByFault() {
+        return faults.values().stream().anyMatch(Fault::stops);
+    }
+
     // ------------------------------------------------------------------ reporting
 
     /** Current state without header. */
@@ -699,6 +765,7 @@ public final class VirtualVehicle {
         List<StateMap> maps = map == null ? null : List.of(new StateMap(map.mapId(), map.version(), null, MapStatus.ENABLED));
         List<AgvError> errors = new ArrayList<>(orderErrors.values());
         errors.addAll(vehicleErrors.values());
+        faults.values().forEach(f -> errors.add(f.error()));
         double reach = profile.drainPerMeter() > 0 ? battery / profile.drainPerMeter() : 0;
         return State.of(maps, orderId, orderUpdateId, lastNodeId, lastNodeSequenceId, isDriving(), paused, false,
                 distanceSinceLastNode, OperatingMode.AUTOMATIC, nodeStates, edgeStates, agvPosition(),

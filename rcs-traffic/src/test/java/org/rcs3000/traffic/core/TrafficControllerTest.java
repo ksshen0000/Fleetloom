@@ -125,6 +125,28 @@ class TrafficControllerTest {
 
         assertThat(h.runUntil(60, () -> h.arrived("BACK"))).isTrue();
         assertThat(h.minDistance()).isGreaterThan(SAFE_DISTANCE);
+        // the end of the reported blockage is announced, so alarms about it can be cleared
+        assertThat(h.progress).anySatisfy(p -> {
+            assertThat(p.vehicleCode()).isEqualTo("BACK");
+            assertThat(p.status()).isEqualTo(RouteStatus.MOVING);
+            assertThat(p.at()).isAfter(h.blocked.getFirst().waitingSince());
+        });
+    }
+
+    @Test
+    void aRemovedVehicleNoLongerBlocksTheWay() {
+        TrafficSettings patient = new TrafficSettings(3, 5.0, 2.0, 1.0, 0.0, 0.1,
+                java.time.Duration.ofSeconds(5), java.time.Duration.ofHours(1));
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(2, 5, 4), patient).vehicle("GONE", "P02").vehicle("BACK", "P00");
+        h.run(0.2);
+        h.traffic().requestRoute("BACK", "P04", null);
+        h.run(10);
+        assertThat(h.traffic().route("BACK").orElseThrow().blockedBy()).isEqualTo("GONE");
+
+        h.removeVehicle("GONE");
+
+        assertThat(h.runUntil(60, () -> h.arrived("BACK"))).isTrue();
+        assertThat(h.traffic().reservations()).noneSatisfy(r -> assertThat(r.vehicleCode()).isEqualTo("GONE"));
     }
 
     @Test
@@ -156,6 +178,10 @@ class TrafficControllerTest {
                 .satisfies(d -> assertThat(d.vehicleCodes()).containsExactly("AGV-1", "AGV-2"));
         assertThat(h.arrived("AGV-1")).isFalse();
         assertThat(h.minDistance()).isGreaterThan(SAFE_DISTANCE);
+
+        // while it lasts it is announced again, for services that missed it
+        h.run(TrafficController.DEADLOCK_REPEAT.toSeconds());
+        assertThat(h.deadlocks).hasSize(2);
     }
 
     @Test
@@ -197,6 +223,19 @@ class TrafficControllerTest {
     }
 
     @Test
+    void failedTargetActionFailsTheRoute() {
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(1, 3, 4)).vehicle("AGV-1", "P00");
+        h.run(0.2);
+
+        // P02 is no charging point, so the simulated vehicle refuses to start charging there
+        h.traffic().requestRoute("AGV-1", "P02", List.of(new VehicleActionDto("startCharging", null, null, null)));
+
+        assertThat(h.runUntil(60, () -> !h.progress.isEmpty() && h.progress.getLast().status() == RouteStatus.FAILED)).isTrue();
+        assertThat(h.progress.getLast().reason()).contains("startCharging").contains("not on a charging point");
+        assertThat(h.arrived("AGV-1")).isFalse();
+    }
+
+    @Test
     void cancelStopsTheVehicleAndFreesTheRestOfTheRoute() {
         TrafficHarness h = new TrafficHarness(TestMaps.grid(1, 6, 4)).vehicle("AGV-1", "P00");
         h.run(0.2);
@@ -208,9 +247,9 @@ class TrafficControllerTest {
 
         assertThat(cancelled.status()).isEqualTo(RouteStatus.CANCELLED);
         assertThat(h.vehicle("AGV-1").isDriving()).isFalse();
-        // stopped between P01 (4 m) and P02 (8 m): only that stretch stays reserved
-        assertThat(h.pose("AGV-1").x()).isBetween(4.5, 7.5);
-        assertThat(reservedBy(h, "AGV-1")).containsExactly("NODE:P01", "NODE:P02", "PATH:P01-P02");
+        // it was between P01 (4 m) and P02 (8 m), finished that path and stopped on P02, which it alone holds now
+        assertThat(h.pose("AGV-1").x()).isEqualTo(8.0);
+        assertThat(reservedBy(h, "AGV-1")).containsExactly("NODE:P02");
         assertThat(h.progress.getLast().status()).isEqualTo(RouteStatus.CANCELLED);
     }
 
@@ -241,6 +280,59 @@ class TrafficControllerTest {
         RouteViewDto other = h.traffic().requestRoute("AGV-2", "P02", null);
         assertThat(other.status()).isEqualTo(RouteStatus.WAITING);
         assertThat(other.blockedBy()).isEqualTo("AGV-1");
+    }
+
+    @Test
+    void aForeignOrderStuckAtTheEndOfItsBaseIsCancelledSoTheVehicleCanGoOn() {
+        // after a restart: the vehicle drove out the base of an old order and waits for a release that never comes
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(1, 5, 4)).vehicle("AGV-1", "P00");
+        h.run(0.2);
+        h.fleet().sendRoute("AGV-1", Routes.withHorizon(2, "P00", "P01", "P02", "P03"));
+        h.run(1);
+        assertThatThrownBy(() -> h.traffic().requestRoute("AGV-1", "P04", null))
+                .isInstanceOfSatisfying(BizException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(TrafficErrorCode.VEHICLE_BUSY));
+
+        h.run(10);
+        RouteViewDto route = h.traffic().requestRoute("AGV-1", "P04", null);
+
+        assertThat(route.nodes()).startsWith("P01");
+        assertThat(h.runUntil(60, () -> h.arrived("AGV-1"))).isTrue();
+    }
+
+    @Test
+    void aVehicleThatLostItsOrderEndsItsRoute() {
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(1, 5, 4)).vehicle("AGV-1", "P00");
+        h.run(0.2);
+        h.traffic().requestRoute("AGV-1", "P04", null);
+        h.run(2);
+
+        // as after a reboot: same place, no order
+        h.restartVehicle("AGV-1");
+        h.run(2);
+
+        RouteViewDto route = h.traffic().route("AGV-1").orElseThrow();
+        assertThat(route.status()).isEqualTo(RouteStatus.FAILED);
+        assertThat(h.progress.getLast().reason()).contains("no longer runs order");
+        assertThat(h.traffic().requestRoute("AGV-1", "P00", null).status()).isNotEqualTo(RouteStatus.FAILED);
+    }
+
+    @Test
+    void aNewRouteWaitsUntilTheCancelledOneHasStopped() {
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(1, 5, 4)).vehicle("AGV-1", "P00");
+        h.run(0.2);
+        h.traffic().requestRoute("AGV-1", "P04", null);
+        h.run(3);
+        h.traffic().cancelRoute("AGV-1");
+        h.run(0.1);
+
+        assertThatThrownBy(() -> h.traffic().requestRoute("AGV-1", "P00", null))
+                .isInstanceOfSatisfying(BizException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(TrafficErrorCode.VEHICLE_BUSY));
+        h.run(10);
+        // it stopped on the next point and takes the new route
+        assertThat(h.traffic().requestRoute("AGV-1", "P00", null).status()).isNotEqualTo(RouteStatus.FAILED);
+        assertThat(h.runUntil(60, () -> h.arrived("AGV-1"))).isTrue();
     }
 
     @Test
@@ -288,8 +380,11 @@ class TrafficControllerTest {
         h.run(2);
         h.traffic().cancelRoute("AGV-1");
         h.run(5);
-        assertError(() -> h.traffic().requestRoute("AGV-1", "P00", null), TrafficErrorCode.VEHICLE_NOT_ON_NODE);
         assertError(() -> h.traffic().cancelRoute("AGV-1"), TrafficErrorCode.NO_ACTIVE_ROUTE);
+        // pushed off the points by hand
+        h.fleet().relocate("AGV-1", 2, 0.5, 0, TestMaps.MAP, null);
+        h.run(1.1);
+        assertError(() -> h.traffic().requestRoute("AGV-1", "P00", null), TrafficErrorCode.VEHICLE_NOT_ON_NODE);
     }
 
     private static void assertError(ThrowingCallable call, TrafficErrorCode expected) {

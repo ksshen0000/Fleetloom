@@ -1,0 +1,21 @@
+# Peak hour in the warehouse of scenario-warehouse.yaml: six vehicles, orders arriving three times as
+# fast, all flows at once. A stress test for dispatch and traffic control.
+name: warehouse-peak
+timeScale: 6
+maxDuration: 30m
+vehicles:
+  - {serialNumber: WH-01, initialPoint: PARK1, registerAs: JACK}
+  - {serialNumber: WH-02, initialPoint: PARK2, registerAs: JACK}
+  - {serialNumber: WH-03, initialPoint: PARK3, registerAs: JACK}
+  - {serialNumber: WH-04, initialPoint: WN2, registerAs: JACK}
+orders:
+  - {name: inbound, every: 8s, count: 12, type: TRANSPORT, targetZone: STORE,
+     arrive: {zone: IN, carrierType: SHELF, prefix: IB, goods: [SKU-APPLE, SKU-MANGO], quantity: 24}}
+  # two stations: more picks than they can take wait for a free one
+  - {name: picking, start: 5s, every: 12s, count: 10, type: TRANSPORT, fromZone: STORE, targetZone: PICK,
+     returnAfter: 10s, maxWait: 5m}
+  - {name: outbound apples, start: 20s, every: 15s, count: 6, type: TRANSPORT, fromZone: STORE, sku: SKU-APPLE,
+     targetZone: OUT, depart: 8s, maxWait: 5m}
+  - {name: outbound mangos, start: 25s, every: 15s, count: 6, type: TRANSPORT, fromZone: STORE, sku: SKU-MANGO,
+     targetZone: OUT, depart: 8s, maxWait: 5m}
+  - {name: transfer, start: 30s, every: 30s, count: 4, type: TRANSPORT, fromZone: STORE, targetZone: STORE}

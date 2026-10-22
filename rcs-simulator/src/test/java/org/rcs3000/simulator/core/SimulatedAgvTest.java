@@ -151,4 +151,22 @@ class SimulatedAgvTest {
         assertThat(connections).extracting(Connection::connectionState)
                 .containsExactly(ConnectionState.ONLINE, ConnectionState.OFFLINE);
     }
+
+    @Test
+    void droppedConnectionSilencesTheVehicleUntilItIsBack() {
+        SimulatedAgv agv = engine.find(AGV.serialNumber()).orElseThrow();
+        simulate(1);
+        agv.dropConnection(3);
+        states.clear();
+        fleet.sendOrder(AGV, OrderBuilder.start("lost", 0).node("A", 0, 0).node("B", 5, 0).build());
+
+        simulate(2.9);
+        assertThat(states).isEmpty();
+        assertThat(agv.isConnectionDropped()).isTrue();
+
+        simulate(0.2);
+        assertThat(states).isNotEmpty();
+        // what was sent during the outage never arrived
+        assertThat(states.getLast().orderId()).isNotEqualTo("lost");
+    }
 }

@@ -7,5 +7,8 @@ public interface VehicleStatusCache {
 
     void put(VehicleStatusDto status);
 
+    default void remove(String code) {
+    }
+
     VehicleStatusCache NONE = status -> { };
 }

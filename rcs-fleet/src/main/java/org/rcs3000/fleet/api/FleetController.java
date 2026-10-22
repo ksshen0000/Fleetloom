@@ -1,20 +1,27 @@
 package org.rcs3000.fleet.api;
 
+import java.time.Instant;
 import java.util.List;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import org.rcs3000.common.api.ApiResponse;
 import org.rcs3000.contracts.fleet.OrderRefDto;
 import org.rcs3000.contracts.fleet.RouteCommandDto;
 import org.rcs3000.contracts.fleet.VehicleStatusDto;
 import org.rcs3000.fleet.app.FleetService;
+import org.rcs3000.fleet.core.MessageLog;
 import org.rcs3000.vda5050.v2.factsheet.Factsheet;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -23,13 +30,24 @@ import org.springframework.web.bind.annotation.RestController;
  * exposed through the gateway.
  */
 @RestController
+@Validated
 @RequestMapping("/api/fleet/v1/vehicles")
 public class FleetController {
 
     private final FleetService fleet;
+    private final MessageLog messages;
 
-    public FleetController(FleetService fleet) {
+    public FleetController(FleetService fleet, MessageLog messages) {
         this.fleet = fleet;
+        this.messages = messages;
+    }
+
+    /** Messages exchanged with the vehicle, newest first (FLT-07). */
+    @GetMapping("/{code}/messages")
+    public ApiResponse<List<MessageLog.Entry>> messages(@PathVariable String code,
+            @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
+            @RequestParam(defaultValue = "200") @Min(1) @Max(2000) int limit) {
+        return ApiResponse.ok(messages.find(code, from, to, limit));
     }
 
     @GetMapping
@@ -40,6 +58,13 @@ public class FleetController {
     @GetMapping("/{code}")
     public ApiResponse<VehicleStatusDto> vehicle(@PathVariable String code) {
         return ApiResponse.ok(fleet.vehicle(code));
+    }
+
+    /** Removes a vehicle that is offline or lost from the list. */
+    @DeleteMapping("/{code}")
+    public ApiResponse<Void> forget(@PathVariable String code) {
+        fleet.forget(code);
+        return ApiResponse.ok();
     }
 
     @GetMapping("/{code}/factsheet")
@@ -70,6 +95,11 @@ public class FleetController {
     @PostMapping("/{code}/cancel-order")
     public ApiResponse<String> cancelOrder(@PathVariable String code) {
         return ApiResponse.ok(fleet.cancelOrder(code));
+    }
+
+    @PostMapping("/{code}/stop-charging")
+    public ApiResponse<String> stopCharging(@PathVariable String code) {
+        return ApiResponse.ok(fleet.stopCharging(code));
     }
 
     @PostMapping("/{code}/factsheet-request")

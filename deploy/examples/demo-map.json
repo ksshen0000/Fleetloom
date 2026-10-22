@@ -1,146 +1,128 @@
 {
  "revision": 0,
  "points": [
-  {
-   "code": "P00",
-   "x": 0.0,
-   "y": 0.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P01",
-   "x": 4.0,
-   "y": 0.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P02",
-   "x": 8.0,
-   "y": 0.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P10",
-   "x": 0.0,
-   "y": 4.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P11",
-   "x": 4.0,
-   "y": 4.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P12",
-   "x": 8.0,
-   "y": 4.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P20",
-   "x": 0.0,
-   "y": 8.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P21",
-   "x": 4.0,
-   "y": 8.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "P22",
-   "x": 8.0,
-   "y": 8.0,
-   "type": "NORMAL"
-  },
-  {
-   "code": "CH1",
-   "x": -4.0,
-   "y": 0.0,
-   "type": "CHARGING"
-  }
+  {"code": "P00", "x": 0.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "P01", "x": 4.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "P02", "x": 8.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "P10", "x": 0.0, "y": 4.0, "type": "NORMAL"},
+  {"code": "P11", "x": 4.0, "y": 4.0, "type": "NORMAL"},
+  {"code": "P12", "x": 8.0, "y": 4.0, "type": "NORMAL"},
+  {"code": "P20", "x": 0.0, "y": 8.0, "type": "NORMAL"},
+  {"code": "P21", "x": 4.0, "y": 8.0, "type": "NORMAL"},
+  {"code": "P22", "x": 8.0, "y": 8.0, "type": "NORMAL"},
+  {"code": "CH1", "x": -4.0, "y": 0.0, "type": "CHARGING"},
+  {"code": "WS0", "x": 16.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN0", "x": 16.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS1", "x": 20.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN1", "x": 20.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS2", "x": 24.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN2", "x": 24.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS3", "x": 28.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN3", "x": 28.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS4", "x": 32.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN4", "x": 32.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS5", "x": 36.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN5", "x": 36.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS6", "x": 40.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN6", "x": 40.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS7", "x": 44.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN7", "x": 44.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WS8", "x": 48.0, "y": 0.0, "type": "NORMAL"},
+  {"code": "WN8", "x": 48.0, "y": 12.0, "type": "NORMAL"},
+  {"code": "WW4", "x": 16.0, "y": 4.0, "type": "NORMAL"},
+  {"code": "WW8", "x": 16.0, "y": 8.0, "type": "NORMAL"},
+  {"code": "WE4", "x": 48.0, "y": 4.0, "type": "NORMAL"},
+  {"code": "WE8", "x": 48.0, "y": 8.0, "type": "NORMAL"},
+  {"code": "WM", "x": 32.0, "y": 6.0, "type": "NORMAL"},
+  {"code": "ST01", "x": 20.0, "y": 3.0, "type": "NORMAL"},
+  {"code": "ST02", "x": 24.0, "y": 3.0, "type": "NORMAL"},
+  {"code": "ST03", "x": 28.0, "y": 3.0, "type": "NORMAL"},
+  {"code": "ST04", "x": 36.0, "y": 3.0, "type": "NORMAL"},
+  {"code": "ST05", "x": 40.0, "y": 3.0, "type": "NORMAL"},
+  {"code": "ST06", "x": 44.0, "y": 3.0, "type": "NORMAL"},
+  {"code": "ST07", "x": 20.0, "y": 9.0, "type": "NORMAL"},
+  {"code": "ST08", "x": 24.0, "y": 9.0, "type": "NORMAL"},
+  {"code": "ST09", "x": 28.0, "y": 9.0, "type": "NORMAL"},
+  {"code": "ST10", "x": 36.0, "y": 9.0, "type": "NORMAL"},
+  {"code": "ST11", "x": 40.0, "y": 9.0, "type": "NORMAL"},
+  {"code": "ST12", "x": 44.0, "y": 9.0, "type": "NORMAL"},
+  {"code": "IN1", "x": 20.0, "y": 15.0, "type": "NORMAL"},
+  {"code": "OUT1", "x": 20.0, "y": -3.0, "type": "NORMAL"},
+  {"code": "IN2", "x": 32.0, "y": 15.0, "type": "NORMAL"},
+  {"code": "OUT2", "x": 32.0, "y": -3.0, "type": "NORMAL"},
+  {"code": "IN3", "x": 44.0, "y": 15.0, "type": "NORMAL"},
+  {"code": "OUT3", "x": 44.0, "y": -3.0, "type": "NORMAL"},
+  {"code": "PS1", "x": 51.0, "y": 4.0, "type": "WORKSTATION"},
+  {"code": "PS2", "x": 51.0, "y": 8.0, "type": "WORKSTATION"},
+  {"code": "CH2", "x": 51.0, "y": 0.0, "type": "CHARGING"},
+  {"code": "PARK1", "x": 13.0, "y": 4.0, "type": "PARKING"},
+  {"code": "PARK2", "x": 13.0, "y": 8.0, "type": "PARKING"},
+  {"code": "PARK3", "x": 51.0, "y": 12.0, "type": "PARKING"}
  ],
  "paths": [
-  {
-   "code": "P00-P01",
-   "fromPoint": "P00",
-   "toPoint": "P01",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P00-P10",
-   "fromPoint": "P00",
-   "toPoint": "P10",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P01-P02",
-   "fromPoint": "P01",
-   "toPoint": "P02",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P01-P11",
-   "fromPoint": "P01",
-   "toPoint": "P11",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P02-P12",
-   "fromPoint": "P02",
-   "toPoint": "P12",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P10-P11",
-   "fromPoint": "P10",
-   "toPoint": "P11",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P10-P20",
-   "fromPoint": "P10",
-   "toPoint": "P20",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P11-P12",
-   "fromPoint": "P11",
-   "toPoint": "P12",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P11-P21",
-   "fromPoint": "P11",
-   "toPoint": "P21",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P12-P22",
-   "fromPoint": "P12",
-   "toPoint": "P22",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P20-P21",
-   "fromPoint": "P20",
-   "toPoint": "P21",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "P21-P22",
-   "fromPoint": "P21",
-   "toPoint": "P22",
-   "direction": "BIDIRECTIONAL"
-  },
-  {
-   "code": "CH1-P00",
-   "fromPoint": "CH1",
-   "toPoint": "P00",
-   "direction": "BIDIRECTIONAL"
-  }
+  {"code": "P00-P01", "fromPoint": "P00", "toPoint": "P01", "direction": "BIDIRECTIONAL"},
+  {"code": "P00-P10", "fromPoint": "P00", "toPoint": "P10", "direction": "BIDIRECTIONAL"},
+  {"code": "P01-P02", "fromPoint": "P01", "toPoint": "P02", "direction": "BIDIRECTIONAL"},
+  {"code": "P01-P11", "fromPoint": "P01", "toPoint": "P11", "direction": "BIDIRECTIONAL"},
+  {"code": "P02-P12", "fromPoint": "P02", "toPoint": "P12", "direction": "BIDIRECTIONAL"},
+  {"code": "P10-P11", "fromPoint": "P10", "toPoint": "P11", "direction": "BIDIRECTIONAL"},
+  {"code": "P10-P20", "fromPoint": "P10", "toPoint": "P20", "direction": "BIDIRECTIONAL"},
+  {"code": "P11-P12", "fromPoint": "P11", "toPoint": "P12", "direction": "BIDIRECTIONAL"},
+  {"code": "P11-P21", "fromPoint": "P11", "toPoint": "P21", "direction": "BIDIRECTIONAL"},
+  {"code": "P12-P22", "fromPoint": "P12", "toPoint": "P22", "direction": "BIDIRECTIONAL"},
+  {"code": "P20-P21", "fromPoint": "P20", "toPoint": "P21", "direction": "BIDIRECTIONAL"},
+  {"code": "P21-P22", "fromPoint": "P21", "toPoint": "P22", "direction": "BIDIRECTIONAL"},
+  {"code": "CH1-P00", "fromPoint": "CH1", "toPoint": "P00", "direction": "BIDIRECTIONAL"},
+  {"code": "WS0-WS1", "fromPoint": "WS0", "toPoint": "WS1", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN1-WN0", "fromPoint": "WN1", "toPoint": "WN0", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS1-WS2", "fromPoint": "WS1", "toPoint": "WS2", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN2-WN1", "fromPoint": "WN2", "toPoint": "WN1", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS2-WS3", "fromPoint": "WS2", "toPoint": "WS3", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN3-WN2", "fromPoint": "WN3", "toPoint": "WN2", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS3-WS4", "fromPoint": "WS3", "toPoint": "WS4", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN4-WN3", "fromPoint": "WN4", "toPoint": "WN3", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS4-WS5", "fromPoint": "WS4", "toPoint": "WS5", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN5-WN4", "fromPoint": "WN5", "toPoint": "WN4", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS5-WS6", "fromPoint": "WS5", "toPoint": "WS6", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN6-WN5", "fromPoint": "WN6", "toPoint": "WN5", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS6-WS7", "fromPoint": "WS6", "toPoint": "WS7", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN7-WN6", "fromPoint": "WN7", "toPoint": "WN6", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS7-WS8", "fromPoint": "WS7", "toPoint": "WS8", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN8-WN7", "fromPoint": "WN8", "toPoint": "WN7", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS8-WE4", "fromPoint": "WS8", "toPoint": "WE4", "direction": "UNIDIRECTIONAL"},
+  {"code": "WE4-WE8", "fromPoint": "WE4", "toPoint": "WE8", "direction": "UNIDIRECTIONAL"},
+  {"code": "WE8-WN8", "fromPoint": "WE8", "toPoint": "WN8", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN0-WW8", "fromPoint": "WN0", "toPoint": "WW8", "direction": "UNIDIRECTIONAL"},
+  {"code": "WW8-WW4", "fromPoint": "WW8", "toPoint": "WW4", "direction": "UNIDIRECTIONAL"},
+  {"code": "WW4-WS0", "fromPoint": "WW4", "toPoint": "WS0", "direction": "UNIDIRECTIONAL"},
+  {"code": "WN4-WM", "fromPoint": "WN4", "toPoint": "WM", "direction": "UNIDIRECTIONAL"},
+  {"code": "WM-WS4", "fromPoint": "WM", "toPoint": "WS4", "direction": "UNIDIRECTIONAL"},
+  {"code": "P02-WS0", "fromPoint": "P02", "toPoint": "WS0", "direction": "UNIDIRECTIONAL"},
+  {"code": "WW8-P22", "fromPoint": "WW8", "toPoint": "P22", "direction": "UNIDIRECTIONAL"},
+  {"code": "WS1-ST01", "fromPoint": "WS1", "toPoint": "ST01", "direction": "BIDIRECTIONAL"},
+  {"code": "WS2-ST02", "fromPoint": "WS2", "toPoint": "ST02", "direction": "BIDIRECTIONAL"},
+  {"code": "WS3-ST03", "fromPoint": "WS3", "toPoint": "ST03", "direction": "BIDIRECTIONAL"},
+  {"code": "WS5-ST04", "fromPoint": "WS5", "toPoint": "ST04", "direction": "BIDIRECTIONAL"},
+  {"code": "WS6-ST05", "fromPoint": "WS6", "toPoint": "ST05", "direction": "BIDIRECTIONAL"},
+  {"code": "WS7-ST06", "fromPoint": "WS7", "toPoint": "ST06", "direction": "BIDIRECTIONAL"},
+  {"code": "WN1-ST07", "fromPoint": "WN1", "toPoint": "ST07", "direction": "BIDIRECTIONAL"},
+  {"code": "WN2-ST08", "fromPoint": "WN2", "toPoint": "ST08", "direction": "BIDIRECTIONAL"},
+  {"code": "WN3-ST09", "fromPoint": "WN3", "toPoint": "ST09", "direction": "BIDIRECTIONAL"},
+  {"code": "WN5-ST10", "fromPoint": "WN5", "toPoint": "ST10", "direction": "BIDIRECTIONAL"},
+  {"code": "WN6-ST11", "fromPoint": "WN6", "toPoint": "ST11", "direction": "BIDIRECTIONAL"},
+  {"code": "WN7-ST12", "fromPoint": "WN7", "toPoint": "ST12", "direction": "BIDIRECTIONAL"},
+  {"code": "WN1-IN1", "fromPoint": "WN1", "toPoint": "IN1", "direction": "BIDIRECTIONAL"},
+  {"code": "WS1-OUT1", "fromPoint": "WS1", "toPoint": "OUT1", "direction": "BIDIRECTIONAL"},
+  {"code": "WN4-IN2", "fromPoint": "WN4", "toPoint": "IN2", "direction": "BIDIRECTIONAL"},
+  {"code": "WS4-OUT2", "fromPoint": "WS4", "toPoint": "OUT2", "direction": "BIDIRECTIONAL"},
+  {"code": "WN7-IN3", "fromPoint": "WN7", "toPoint": "IN3", "direction": "BIDIRECTIONAL"},
+  {"code": "WS7-OUT3", "fromPoint": "WS7", "toPoint": "OUT3", "direction": "BIDIRECTIONAL"},
+  {"code": "WE4-PS1", "fromPoint": "WE4", "toPoint": "PS1", "direction": "BIDIRECTIONAL"},
+  {"code": "WE8-PS2", "fromPoint": "WE8", "toPoint": "PS2", "direction": "BIDIRECTIONAL"},
+  {"code": "WS8-CH2", "fromPoint": "WS8", "toPoint": "CH2", "direction": "BIDIRECTIONAL"},
+  {"code": "WW4-PARK1", "fromPoint": "WW4", "toPoint": "PARK1", "direction": "BIDIRECTIONAL"},
+  {"code": "WW8-PARK2", "fromPoint": "WW8", "toPoint": "PARK2", "direction": "BIDIRECTIONAL"},
+  {"code": "WN8-PARK3", "fromPoint": "WN8", "toPoint": "PARK3", "direction": "BIDIRECTIONAL"}
  ],
  "areas": []
 }

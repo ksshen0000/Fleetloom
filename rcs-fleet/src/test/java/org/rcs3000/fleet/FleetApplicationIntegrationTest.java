@@ -114,5 +114,13 @@ class FleetApplicationIntegrationTest {
 
         assertThat(redis.opsForHash().get(ValkeyVehicleStatusCache.KEY, "IT-1")).asString().contains("\"lastNodeId\":\"B\"");
         assertThat(redis.opsForStream().size(ValkeyEventBus.streamKey(VehicleStateUpdatedEvent.TYPE))).isPositive();
+
+        mvc.perform(get("/api/fleet/v1/vehicles/IT-1/messages"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.direction == 'OUT' && @.topic == 'order')]").exists())
+                .andExpect(jsonPath("$.data[?(@.direction == 'IN' && @.topic == 'state')]").exists())
+                .andExpect(jsonPath("$.data[?(@.topic == 'visualization')]").doesNotExist());
+        mvc.perform(get("/api/fleet/v1/vehicles/IT-1/messages").param("to", "2000-01-01T00:00:00Z"))
+                .andExpect(jsonPath("$.data").isEmpty());
     }
 }

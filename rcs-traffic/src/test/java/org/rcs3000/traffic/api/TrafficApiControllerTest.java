@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.rcs3000.common.error.BizException;
 import org.rcs3000.common.web.GlobalExceptionHandler;
 import org.rcs3000.traffic.app.TrafficEngine;
+import org.rcs3000.traffic.app.TrafficTuning;
 import org.rcs3000.traffic.core.TrafficErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -30,6 +32,19 @@ class TrafficApiControllerTest {
 
     @MockitoBean
     private TrafficEngine engine;
+
+    @MockitoBean
+    private TrafficTuning tuning;
+
+    @Test
+    void settingsAreValidated() throws Exception {
+        mvc.perform(put("/api/traffic/v1/settings").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"lookaheadNodes": 0, "lookaheadDistance": 5, "occupiedPenalty": 30,
+                         "blockedEventAfterSeconds": 5, "replanAfterSeconds": 10}
+                        """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.lookaheadNodes").exists());
+    }
 
     @Test
     void routeRequestNeedsVehicleAndTarget() throws Exception {

@@ -2,6 +2,7 @@ package org.rcs3000.vda5050.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -20,6 +21,8 @@ import org.rcs3000.vda5050.v2.InstantActions;
 import org.rcs3000.vda5050.v2.Order;
 import org.rcs3000.vda5050.v2.SampleMessages;
 import org.rcs3000.vda5050.v2.State;
+import org.rcs3000.vda5050.v2.Vda5050Message;
+import org.rcs3000.vda5050.v2.Vda5050Topic;
 
 class ClientRoundTripTest {
 
@@ -123,6 +126,44 @@ class ClientRoundTripTest {
         fleet.sendOrder(AGV, SampleMessages.order());
 
         assertThat(orders).hasSize(1);
+    }
+
+    @Test
+    void clearedRetainedStateIsNotRediscovered() {
+        agv.close();
+        fleet.clearRetained(AGV);
+
+        RecordingListener late = new RecordingListener();
+        new MasterClient(broker.newClient(), "uagv", clock).start(late);
+
+        assertThat(broker.retainedMessage("uagv/v2/RCS3000-SIM/AGV-001/connection")).isNull();
+        assertThat(late.connections).isEmpty();
+    }
+
+    @Test
+    void theTapSeesSentAndReceivedMessagesAsTheyTravel() {
+        List<String> seen = new CopyOnWriteArrayList<>();
+        MessageTap tap = new MessageTap() {
+            @Override
+            public void sent(VehicleId vehicle, Vda5050Topic topic, Vda5050Message message, byte[] payload) {
+                seen.add("sent " + topic + " " + new String(payload, StandardCharsets.UTF_8).contains("\"headerId\":0"));
+            }
+
+            @Override
+            public void received(VehicleId vehicle, Vda5050Topic topic, Vda5050Message message, byte[] payload) {
+                seen.add("received " + topic + " " + vehicle.serialNumber());
+                throw new IllegalStateException("a failing tap must not lose the message");
+            }
+        };
+        RecordingListener tapped = new RecordingListener();
+        MasterClient client = new MasterClient(broker.newClient(), "uagv", clock, tap);
+        client.start(tapped);
+
+        client.sendOrder(AGV, SampleMessages.order().withHeader(Header.UNSTAMPED));
+        agv.publishState(SampleMessages.state());
+
+        assertThat(seen).containsExactly("received CONNECTION AGV-001", "sent ORDER true", "received STATE AGV-001");
+        assertThat(tapped.states).hasSize(1);
     }
 
     private static final class RecordingListener implements MasterListener {

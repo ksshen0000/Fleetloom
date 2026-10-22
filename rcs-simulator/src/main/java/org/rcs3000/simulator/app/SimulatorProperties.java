@@ -13,6 +13,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param timeScale             simulated seconds per real second
  * @param stateInterval         seconds between periodic state messages
  * @param visualizationInterval seconds between visualization messages
+ * @param dispatchUrl           where scenario runs send their orders (SIM-12)
+ * @param fleetUrl              where to look up, at start, the vehicles of an earlier run
+ * @param restoreVehicles       whether vehicles fleet control still knows from an earlier run (e.g. ones
+ *                              added at run time) are started again where they were last seen
  */
 @ConfigurationProperties("rcs.simulator")
 public record SimulatorProperties(
@@ -24,7 +28,10 @@ public record SimulatorProperties(
         @DefaultValue("0.1") double visualizationInterval,
         @DefaultValue MapSource map,
         @DefaultValue Profile profile,
-        List<VehicleConfig> vehicles) {
+        List<VehicleConfig> vehicles,
+        @DefaultValue("http://localhost:8082") String dispatchUrl,
+        @DefaultValue("http://localhost:8083") String fleetUrl,
+        @DefaultValue("true") boolean restoreVehicles) {
 
     public SimulatorProperties {
         vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
@@ -62,14 +69,18 @@ public record SimulatorProperties(
         public VehicleProfile toVehicleProfile() {
             return new VehicleProfile(maxSpeed, acceleration, deceleration, rotationSpeed, nodeTolerance,
                     drainPerMeter, drainPerSecond, chargePerSecond, defaultActionDuration,
-                    actionDurations == null ? Map.of("pick", 2.0, "drop", 2.0) : actionDurations, customActionTypes);
+                    actionDurations == null ? Map.of("pick", 2.0, "drop", 2.0, "lift", 2.0, "lower", 2.0) : actionDurations,
+                    // jacking actions of the LIFT order template
+                    customActionTypes == null ? Set.of("lift", "lower") : customActionTypes);
         }
     }
 
     /**
      * Where a vehicle starts: on {@code initialPoint} of the map, or at {@code x}/{@code y}.
+     *
+     * @param battery initial charge in percent, full when absent
      */
     public record VehicleConfig(String serialNumber, String initialPoint, Double x, Double y,
-            @DefaultValue("0") double theta) {
+            @DefaultValue("0") double theta, Double battery) {
     }
 }

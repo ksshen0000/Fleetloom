@@ -55,6 +55,36 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void invalidParametersAreBadRequests() throws Exception {
+        mvc.perform(get("/codes/bad code"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.data.code").exists());
+        mvc.perform(get("/count").param("n", "many"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.n").value("invalid value many"));
+        mvc.perform(get("/count"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.n").value("required"));
+    }
+
+    @Test
+    void constraintViolationsFromValidatedBeansAreBadRequests() throws Exception {
+        MockMvc withViolations = MockMvcBuilders.standaloneSetup(new ViolatingController())
+                .setControllerAdvice(new ConstraintViolationHandler(), new GlobalExceptionHandler()).build();
+        withViolations.perform(get("/violated"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.data.name").exists());
+    }
+
+    @Test
+    void wrongMethodKeepsItsStatus() throws Exception {
+        mvc.perform(post("/count"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+    }
+
+    @Test
     void unexpectedExceptionIsInternalErrorWithoutLeakingDetails() throws Exception {
         mvc.perform(get("/boom"))
                 .andExpect(status().isInternalServerError())
@@ -63,6 +93,16 @@ class GlobalExceptionHandlerTest {
     }
 
     record NamedRequest(@NotBlank String name) {
+    }
+
+    @RestController
+    static class ViolatingController {
+
+        @GetMapping("/violated")
+        void violated() {
+            var validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
+            throw new jakarta.validation.ConstraintViolationException(validator.validate(new NamedRequest("")));
+        }
     }
 
     @RestController
@@ -75,6 +115,15 @@ class GlobalExceptionHandlerTest {
 
         @PostMapping("/validated")
         void validated(@Valid @RequestBody NamedRequest request) {
+        }
+
+        @GetMapping("/codes/{code}")
+        void code(@org.springframework.web.bind.annotation.PathVariable
+                @jakarta.validation.constraints.Pattern(regexp = "[A-Z]+") String code) {
+        }
+
+        @GetMapping("/count")
+        void count(@org.springframework.web.bind.annotation.RequestParam int n) {
         }
 
         @GetMapping("/boom")

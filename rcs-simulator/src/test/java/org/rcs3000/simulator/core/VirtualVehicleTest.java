@@ -526,25 +526,26 @@ class VirtualVehicleTest {
         }
 
         @Test
-        void cancelOrderStopsAndFailsOutstandingActions() {
+        void cancelOrderStopsOnTheNextNodeAndFailsOutstandingActions() {
             VirtualVehicle v = vehicleAt(0, 0);
-            v.receiveOrder(OrderBuilder.start("o1", 0).node("A", 0, 0)
-                    .node("B", 20, 0, Action.of(ActionTypes.PICK, "pick", BlockingType.HARD)).build());
+            v.receiveOrder(OrderBuilder.start("o1", 0).node("A", 0, 0).node("B", 10, 0)
+                    .node("C", 20, 0, Action.of(ActionTypes.PICK, "pick", BlockingType.HARD)).build());
             run(v, 5);
+            assertThat(v.pose().x()).isBetween(1.0, 9.0);
 
             v.receiveInstantActions(instant(Action.of(ActionTypes.CANCEL_ORDER, "cancel", BlockingType.HARD)));
             assertThat(statusOf(v, "cancel")).isEqualTo(ActionStatus.RUNNING);
             assertThat(statusOf(v, "pick")).isEqualTo(ActionStatus.FAILED);
 
-            assertThat(runUntil(v, 5, () -> statusOf(v, "cancel") == ActionStatus.FINISHED)).isTrue();
+            assertThat(runUntil(v, 20, () -> statusOf(v, "cancel") == ActionStatus.FINISHED)).isTrue();
             assertThat(v.velocity()).isZero();
             assertThat(v.state().nodeStates()).isEmpty();
             assertThat(v.state().orderId()).isEqualTo("o1");
-            double stoppedAt = v.pose().x();
-            assertThat(stoppedAt).isBetween(1.0, 19.0);
+            assertThat(v.lastNodeId()).isEqualTo("B");
+            assertThat(v.pose().x()).isEqualTo(10.0);
 
             // a new order starting from where the vehicle stands is accepted
-            v.receiveOrder(OrderBuilder.start("o2", 0).node("HERE", stoppedAt, 0).node("A", 0, 0).build());
+            v.receiveOrder(OrderBuilder.start("o2", 0).node("B", 10, 0).node("A", 0, 0).build());
             assertThat(v.orderId()).isEqualTo("o2");
         }
 
@@ -591,6 +592,57 @@ class VirtualVehicleTest {
 
             assertThat(statusOf(v, "x")).isEqualTo(ActionStatus.FAILED);
             assertSchemaValid(v);
+        }
+    }
+
+    @Nested
+    class FaultInjectionTest {
+
+        @Test
+        void injectedWarningIsReportedUntilItRunsOutButDoesNotStopTheVehicle() {
+            VirtualVehicle v = vehicleAt(0, 0);
+            v.injectError("laserWarning", org.rcs3000.vda5050.v2.ErrorLevel.WARNING, "dirty scanner", 2);
+            assertThat(v.takeStateEvent()).isTrue();
+            assertThat(errorTypes(v)).containsExactly("laserWarning");
+            assertSchemaValid(v);
+
+            v.receiveOrder(OrderBuilder.start("o1", 0).node("A", 0, 0).node("B", 4, 0).build());
+            run(v, 2.5);
+            assertThat(v.pose().x()).isPositive();
+            assertThat(errorTypes(v)).isEmpty();
+            assertThat(v.takeStateEvent()).isTrue();
+        }
+
+        @Test
+        void fatalErrorStopsTheVehicleUntilCleared() {
+            VirtualVehicle v = vehicleAt(0, 0);
+            v.receiveOrder(OrderBuilder.start("o1", 0).node("A", 0, 0).node("B", 20, 0).build());
+            run(v, 4);
+            v.injectError("motorFault", org.rcs3000.vda5050.v2.ErrorLevel.FATAL, null, 0);
+            run(v, 4);
+            double x = v.pose().x();
+            run(v, 10);
+            assertThat(v.pose().x()).isEqualTo(x);
+            assertThat(v.faults()).containsExactly("motorFault");
+
+            v.clearFaults();
+            assertThat(runUntil(v, 40, () -> arrivedAt(v, "B"))).isTrue();
+        }
+
+        @Test
+        void obstacleStopsTheVehicleForAWhile() {
+            VirtualVehicle v = vehicleAt(0, 0);
+            v.receiveOrder(OrderBuilder.start("o1", 0).node("A", 0, 0).node("B", 20, 0).build());
+            run(v, 4);
+            v.blockByObstacle(5);
+            run(v, 3);
+            double x = v.pose().x();
+            run(v, 1);
+            assertThat(v.pose().x()).isEqualTo(x);
+            assertThat(errorTypes(v)).containsExactly(VirtualVehicle.OBSTACLE);
+
+            assertThat(runUntil(v, 40, () -> arrivedAt(v, "B"))).isTrue();
+            assertThat(v.faults()).isEmpty();
         }
     }
 }

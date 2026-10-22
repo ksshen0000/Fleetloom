@@ -1,21 +1,26 @@
 package org.rcs3000.resource.carrier.api;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import org.rcs3000.common.api.ApiResponse;
 import org.rcs3000.resource.carrier.application.CarrierService;
 import org.rcs3000.resource.carrier.application.CarrierViews.CarrierTypeView;
 import org.rcs3000.resource.carrier.application.CarrierViews.CarrierView;
 import org.rcs3000.resource.carrier.domain.CarrierCategory;
 import org.rcs3000.resource.carrier.domain.CarrierMovement;
+import org.rcs3000.resource.carrier.domain.Goods;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -108,6 +113,31 @@ public class CarrierController {
     @PostMapping("/carriers/{code}/take-out")
     public ApiResponse<CarrierView> takeOut(@PathVariable String code) {
         return ApiResponse.ok(carriers.takeOutManually(code));
+    }
+
+    @GetMapping("/carriers/{code}/goods")
+    public ApiResponse<List<Goods>> goods(@PathVariable String code) {
+        return ApiResponse.ok(carriers.goods(code));
+    }
+
+    /** Records what is on the carrier (CAR-05), replacing the previous list. */
+    @PutMapping("/carriers/{code}/goods")
+    public ApiResponse<List<Goods>> replaceGoods(@PathVariable String code,
+            @RequestBody @Size(max = 200) List<@Valid GoodsLine> lines) {
+        return ApiResponse.ok(carriers.replaceGoods(code, lines.stream()
+                .map(l -> new Goods(l.sku().trim(), l.name(), l.quantity(), l.unit(), l.batchNo())).toList()));
+    }
+
+    /** Which carriers hold goods with this SKU (prefix), and where they are. */
+    @GetMapping("/goods")
+    public ApiResponse<List<CarrierService.StockedView>> findGoods(@RequestParam @NotBlank String sku,
+            @RequestParam(defaultValue = "100") @Min(1) @Max(1000) int limit) {
+        return ApiResponse.ok(carriers.findGoods(sku.trim(), limit));
+    }
+
+    public record GoodsLine(@NotBlank @Size(max = 64) String sku, @Size(max = 128) String name,
+            @NotNull @DecimalMin("0") @Digits(integer = 11, fraction = 3) BigDecimal quantity, @Size(max = 16) String unit,
+            @Size(max = 64) String batchNo) {
     }
 
     @GetMapping("/carriers/{code}/movements")

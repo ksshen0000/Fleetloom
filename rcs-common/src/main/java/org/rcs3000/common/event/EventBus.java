@@ -16,4 +16,12 @@ public interface EventBus {
      * subscribed are not delivered. A handler that throws leaves the event unacknowledged.
      */
     <T> void subscribe(String type, String group, Class<T> payloadType, Consumer<EventEnvelope<T>> handler);
+
+    /**
+     * Like {@link #subscribe}, but always starts with events published from now on, even if the group
+     * existed before; for consumers that only care about live data, e.g. pushing to browsers.
+     */
+    default <T> void subscribeLive(String type, String group, Class<T> payloadType, Consumer<EventEnvelope<T>> handler) {
+        subscribe(type, group, payloadType, handler);
+    }
 }

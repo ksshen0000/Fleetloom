@@ -1,0 +1,43 @@
+server:
+  port: ${RCS_GATEWAY_PORT:8080}
+
+spring:
+  application:
+    name: rcs-gateway
+  data:
+    redis:
+      host: ${RCS_VALKEY_HOST:localhost}
+      port: ${RCS_VALKEY_PORT:6379}
+
+rcs:
+  security:
+    # must match rcs-resource, which signs the tokens
+    jwt-secret: ${RCS_JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+    # login attempts allowed per client address and window, against password guessing
+    login-attempts: 10
+    login-window: 1m
+  gateway:
+    # every /api/<name>/** request goes to services.<name>
+    services:
+      resource: ${RCS_RESOURCE_URL:http://localhost:8081}
+      dispatch: ${RCS_DISPATCH_URL:http://localhost:8082}
+      fleet: ${RCS_FLEET_URL:http://localhost:8083}
+      traffic: ${RCS_TRAFFIC_URL:http://localhost:8084}
+      simulator: ${RCS_SIMULATOR_URL:http://localhost:8090}
+    push:
+      events:
+        - VehicleStateUpdated
+        - VehicleConnectionChanged
+        - VehicleForgotten
+        - TransportOrderStatusChanged
+        - RouteProgressed
+        - TrafficBlocked
+        - DeadlockDetected
+        - MapPublished
+        - AlarmChanged
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

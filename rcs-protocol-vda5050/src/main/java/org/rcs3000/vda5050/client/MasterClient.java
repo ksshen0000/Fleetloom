@@ -29,11 +29,17 @@ public final class MasterClient implements AutoCloseable {
     private final String interfaceName;
     private final Vda5050Codec codec = new Vda5050Codec();
     private final HeaderSequence headers;
+    private final MessageTap tap;
 
     public MasterClient(MqttTransport transport, String interfaceName, Clock clock) {
+        this(transport, interfaceName, clock, MessageTap.NONE);
+    }
+
+    public MasterClient(MqttTransport transport, String interfaceName, Clock clock, MessageTap tap) {
         this.transport = transport;
         this.interfaceName = interfaceName;
         this.headers = new HeaderSequence(clock);
+        this.tap = tap;
     }
 
     public void start(MasterListener listener) {
@@ -53,6 +59,20 @@ public final class MasterClient implements AutoCloseable {
         publish(vehicle, Vda5050Topic.INSTANT_ACTIONS, actions);
     }
 
+    /**
+     * Removes what the broker retains for a vehicle (its last connection state), so that a vehicle
+     * taken out of service is not rediscovered from it.
+     */
+    public void clearRetained(VehicleId vehicle) {
+        for (Vda5050Topic topic : Vda5050Topic.values()) {
+            if (topic.retained()) {
+                TopicPath path = new TopicPath(interfaceName, TopicPath.MAJOR_VERSION, vehicle.manufacturer(),
+                        vehicle.serialNumber(), topic);
+                transport.publish(path.toString(), new byte[0], topic.qos(), true);
+            }
+        }
+    }
+
     @Override
     public void close() {
         transport.close();
@@ -62,11 +82,17 @@ public final class MasterClient implements AutoCloseable {
         Vda5050Message stamped = message.withHeader(headers.next(vehicle.manufacturer(), vehicle.serialNumber(), topic));
         TopicPath path = new TopicPath(interfaceName, TopicPath.MAJOR_VERSION, vehicle.manufacturer(),
                 vehicle.serialNumber(), topic);
-        transport.publish(path.toString(), codec.encode(stamped), topic.qos(), topic.retained());
+        byte[] payload = codec.encode(stamped);
+        transport.publish(path.toString(), payload, topic.qos(), topic.retained());
+        tap(() -> tap.sent(vehicle, topic, stamped, payload));
     }
 
     private <T extends Vda5050Message> void subscribe(Vda5050Topic topic, Class<T> type, BiConsumer<VehicleId, T> consumer) {
         transport.subscribe(TopicPath.filterForAllVehicles(interfaceName, topic), topic.qos(), (t, payload) -> {
+            if (payload.length == 0) {
+                // a retained message being cleared
+                return;
+            }
             TopicPath path;
             T message;
             try {
@@ -76,7 +102,18 @@ public final class MasterClient implements AutoCloseable {
                 log.warn("dropping malformed message on {}: {}", t, e.getMessage());
                 return;
             }
-            consumer.accept(new VehicleId(path.manufacturer(), path.serialNumber()), message);
+            VehicleId vehicle = new VehicleId(path.manufacturer(), path.serialNumber());
+            T decoded = message;
+            tap(() -> tap.received(vehicle, topic, decoded, payload));
+            consumer.accept(vehicle, message);
         });
+    }
+
+    private static void tap(Runnable call) {
+        try {
+            call.run();
+        } catch (RuntimeException e) {
+            log.warn("message tap failed", e);
+        }
     }
 }

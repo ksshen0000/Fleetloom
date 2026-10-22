@@ -1,6 +1,7 @@
 package org.rcs3000.fleet.core;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -18,8 +19,10 @@ import org.rcs3000.vda5050.v2.Edge;
 import org.rcs3000.vda5050.v2.Header;
 import org.rcs3000.vda5050.v2.Node;
 import org.rcs3000.vda5050.v2.NodePosition;
+import org.rcs3000.vda5050.v2.NodeState;
 import org.rcs3000.vda5050.v2.Order;
 import org.rcs3000.vda5050.v2.OrderRules;
+import org.rcs3000.vda5050.v2.State;
 import org.rcs3000.vda5050.v2.Trajectory;
 
 /**
@@ -48,6 +51,28 @@ final class OrderTracker {
         orderUpdateId = 0;
         rememberDecisionPoint(order);
         return order;
+    }
+
+    /**
+     * Takes over the order a vehicle reports when none is known here, e.g. after this service
+     * restarted, so that updates continue it: the decision point is the last released node the
+     * vehicle still has to reach, or the node it last passed.
+     */
+    void adoptIfUnknown(State state) {
+        if (orderId != null || state.orderId() == null || state.orderId().isEmpty()) {
+            return;
+        }
+        orderId = state.orderId();
+        orderUpdateId = state.orderUpdateId();
+        state.nodeStates().stream().filter(NodeState::released)
+                .max(Comparator.comparingLong(NodeState::sequenceId))
+                .ifPresentOrElse(n -> {
+                    decisionNodeId = n.nodeId();
+                    decisionSequenceId = n.sequenceId();
+                }, () -> {
+                    decisionNodeId = state.lastNodeId();
+                    decisionSequenceId = state.lastNodeSequenceId();
+                });
     }
 
     /** Builds an update of the current order; its first node must be the current decision point. */

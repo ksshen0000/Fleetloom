@@ -1,0 +1,12 @@
+# A short mixed load on the DEMO map (SIM-12). Run it with deploy/examples/run-scenario.sh.
+name: demo-mix
+timeScale: 3
+maxDuration: 15m
+vehicles:
+  # a third vehicle, registered so that dispatch gives it orders
+  - {serialNumber: SC-001, initialPoint: P22, registerAs: JACK}
+orders:
+  # vehicles driving around the corners
+  - {every: 15s, count: 6, type: MOVE, targetPoints: [P00, P22, P02, P20]}
+  # shelves carried to any free location in zone A
+  - {start: 5s, every: 20s, count: 4, type: TRANSPORT, carriers: [S1, S2], targetZone: A}

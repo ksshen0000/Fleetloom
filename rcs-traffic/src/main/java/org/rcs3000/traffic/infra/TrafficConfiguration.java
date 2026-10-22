@@ -4,6 +4,7 @@ import java.time.Clock;
 
 import org.rcs3000.common.event.EventBus;
 import org.rcs3000.common.event.valkey.ValkeyEventBus;
+import org.rcs3000.common.web.HttpClients;
 import org.rcs3000.contracts.fleet.OrderRefDto;
 import org.rcs3000.contracts.fleet.RouteCommandDto;
 import org.rcs3000.traffic.app.TrafficEngine;
@@ -92,7 +93,7 @@ public class TrafficConfiguration {
     }
 
     private static <T> T client(RestClient.Builder builder, String baseUrl, Class<T> type) {
-        RestClient rest = builder.clone().baseUrl(baseUrl).build();
+        RestClient rest = HttpClients.withTimeouts(builder, baseUrl).build();
         return HttpServiceProxyFactory.builderFor(RestClientAdapter.create(rest)).build().createClient(type);
     }
 }

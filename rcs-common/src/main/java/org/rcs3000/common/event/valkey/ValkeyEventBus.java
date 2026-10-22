@@ -79,6 +79,22 @@ public final class ValkeyEventBus implements EventBus, AutoCloseable {
     public <T> void subscribe(String type, String group, Class<T> payloadType, Consumer<EventEnvelope<T>> handler) {
         String key = streamKey(type);
         createGroupIfAbsent(key, group);
+        listen(key, type, group, payloadType, handler);
+    }
+
+    @Override
+    public <T> void subscribeLive(String type, String group, Class<T> payloadType, Consumer<EventEnvelope<T>> handler) {
+        String key = streamKey(type);
+        createGroupIfAbsent(key, group);
+        // skip whatever the group has not read yet, e.g. from before a restart
+        redis.execute((org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
+            connection.execute("XGROUP", "SETID".getBytes(), key.getBytes(), group.getBytes(), "$".getBytes());
+            return null;
+        });
+        listen(key, type, group, payloadType, handler);
+    }
+
+    private <T> void listen(String key, String type, String group, Class<T> payloadType, Consumer<EventEnvelope<T>> handler) {
         container.receive(org.springframework.data.redis.connection.stream.Consumer.from(group, consumerName),
                 StreamOffset.create(key, ReadOffset.lastConsumed()),
                 record -> {

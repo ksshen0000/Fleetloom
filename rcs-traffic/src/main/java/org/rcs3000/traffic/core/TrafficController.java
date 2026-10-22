@@ -50,11 +50,13 @@ public final class TrafficController {
     private static final Set<String> REJECTIONS =
             Set.of("validationError", "orderError", "noRouteError", "orderUpdateError");
 
+    static final Duration DEADLOCK_REPEAT = Duration.ofSeconds(30);
+
     private final PathPlanner planner;
     private final FleetGateway fleet;
     private final MapProvider maps;
     private final EventBus events;
-    private final TrafficSettings settings;
+    private TrafficSettings settings;
     private final Clock clock;
 
     private final Map<String, RoadGraph> graphs = new HashMap<>();
@@ -62,6 +64,7 @@ public final class TrafficController {
     private final Map<String, ReservationTable> tables = new HashMap<>();
     private final Map<String, VehicleTraffic> vehicles = new HashMap<>();
     private Set<String> lastDeadlock = Set.of();
+    private Instant deadlockAnnouncedAt = Instant.MIN;
 
     public TrafficController(PathPlanner planner, FleetGateway fleet, MapProvider maps, EventBus events,
             TrafficSettings settings, Clock clock) {
@@ -75,9 +78,19 @@ public final class TrafficController {
 
     // ================================================================== inputs
 
+    public TrafficSettings settings() {
+        return settings;
+    }
+
+    /** Takes effect from the next planning and reservation step on. */
+    public void updateSettings(TrafficSettings settings) {
+        this.settings = settings;
+    }
+
     public void onVehicleStatus(VehicleStatusDto status) {
         VehicleTraffic v = vehicles.computeIfAbsent(status.code(), VehicleTraffic::new);
         v.status = status;
+        cancelOrphanOrder(v);
         if (status.mapCode() == null || status.mapCode().isEmpty() || !status.positionInitialized()) {
             return;
         }
@@ -93,12 +106,60 @@ public final class TrafficController {
         }
     }
 
+    /**
+     * A vehicle on an order this controller did not give it, typically one from before a restart,
+     * drives out its base (which is taken over, see holdWhereItStands) and then waits for a release
+     * that never comes. Such a stuck order is cancelled, so the vehicle can take a new route.
+     */
+    private void cancelOrphanOrder(VehicleTraffic v) {
+        VehicleStatusDto s = v.status;
+        if (v.route != null || s.driving() || !hasUnfinishedOrder(s) || s.orderId().equals(v.cancelledOrphan)
+                || s.connection() != ConnectionStatus.ONLINE
+                || s.remainingNodes().stream().anyMatch(VehicleStatusDto.NodeRef::released)) {
+            return;
+        }
+        log.warn("vehicle {} runs order {} unknown to traffic control; cancelling it", v.code, s.orderId());
+        try {
+            fleet.cancelOrder(v.code);
+            v.cancelledOrphan = s.orderId();
+        } catch (RuntimeException e) {
+            log.warn("could not cancel order {} of vehicle {}, retrying: {}", s.orderId(), v.code, e.getMessage());
+        }
+    }
+
+    private static boolean hasUnfinishedOrder(VehicleStatusDto s) {
+        return s.orderId() != null && !s.orderId().isEmpty() && (!s.remainingNodes().isEmpty()
+                || s.actions().stream().anyMatch(a -> !"FINISHED".equals(a.status()) && !"FAILED".equals(a.status())));
+    }
+
     public void onConnectionChanged(VehicleConnectionChangedEvent event) {
         // Reservations of an unreachable vehicle stay: it may still be standing or rolling there (VEH-07)
         VehicleTraffic v = vehicles.get(event.vehicleCode());
         if (v != null && event.current() != ConnectionStatus.ONLINE) {
             log.warn("vehicle {} is {}; keeping its reservations", event.vehicleCode(), event.current());
         }
+    }
+
+    /**
+     * The vehicle was removed from fleet control by hand, so it is gone from the site: its route ends
+     * and everything it held is free for the others.
+     */
+    public void onVehicleForgotten(String vehicleCode) {
+        VehicleTraffic v = vehicles.remove(vehicleCode);
+        if (v == null) {
+            return;
+        }
+        ActiveRoute r = v.route;
+        if (r != null && r.status.isActive()) {
+            r.status = RouteStatus.CANCELLED;
+            r.clearBlocked();
+            progressed(v, r, "vehicle removed");
+        }
+        for (String mapCode : List.copyOf(tables.keySet())) {
+            tables.get(mapCode).releaseAll(vehicleCode);
+            wakeWaiting(mapCode, vehicleCode);
+        }
+        log.warn("vehicle {} removed from fleet control; its reservations are released", vehicleCode);
     }
 
     /** A new map version was published; it is used once no route runs on the map (MAP-07). */
@@ -147,6 +208,11 @@ public final class TrafficController {
         if (v.route != null && v.route.status.isActive()) {
             throw new BizException(TrafficErrorCode.ROUTE_ACTIVE,
                     "vehicle %s is already on route %s".formatted(vehicleCode, v.route.routeId));
+        }
+        if (hasUnfinishedOrder(s)) {
+            // e.g. it is still braking for a cancelled route, or drives out an order from before a restart
+            throw new BizException(TrafficErrorCode.VEHICLE_BUSY,
+                    "vehicle %s is still finishing order %s".formatted(vehicleCode, s.orderId()));
         }
         RoadGraph graph = graph(s.mapCode());
         if (!standsOnNode(s, graph)) {
@@ -266,15 +332,27 @@ public final class TrafficController {
             return;
         }
         if (!r.orderId.equals(s.orderId())) {
-            return; // the vehicle has not taken the order over yet
+            if (r.acknowledged) {
+                // it dropped the order, e.g. it was restarted: nothing of this route will happen any more
+                finish(v, r, RouteStatus.FAILED, "vehicle no longer runs order " + r.orderId);
+            }
+            return; // otherwise it has not taken the order over yet
         }
+        r.acknowledged = true;
         int index = (int) (s.lastNodeSequenceId() / 2);
         if (index > r.passedIndex && index <= r.releasedIndex) {
             r.passedIndex = index;
         }
-        if (r.passedIndex == r.plan.lastIndex() && !s.driving() && targetActionsDone(r, s)) {
-            finish(v, r, RouteStatus.ARRIVED, null);
-            return;
+        if (r.passedIndex == r.plan.lastIndex() && !s.driving()) {
+            Optional<String> failed = failedTargetAction(r, s);
+            if (failed.isPresent()) {
+                finish(v, r, RouteStatus.FAILED, failed.get());
+                return;
+            }
+            if (targetActionsDone(r, s)) {
+                finish(v, r, RouteStatus.ARRIVED, null);
+                return;
+            }
         }
         table(r.mapCode).retainOnly(v.code, needed(r));
         extendAndSend(v, r);
@@ -295,13 +373,18 @@ public final class TrafficController {
     /** Reserves further ahead and, if anything was gained, releases it to the vehicle. */
     private void extendAndSend(VehicleTraffic v, ActiveRoute r) {
         int before = r.releasedIndex;
+        boolean reportedBlocked = r.blockedEventSent;
         extend(v, r);
         if (r.releasedIndex == before) {
             return;
         }
         try {
             fleet.extendRoute(v.code, command(r, before));
-            r.status = RouteStatus.MOVING;
+            // moving again after waiting at the start or after a reported blockage is a change worth telling
+            if (r.status == RouteStatus.WAITING || reportedBlocked) {
+                r.status = RouteStatus.MOVING;
+                progressed(v, r, null);
+            }
         } catch (RuntimeException e) {
             log.error("could not extend the route of {}; it stops at {}", v.code, r.plan.nodes().get(before), e);
             r.releasedIndex = before;
@@ -385,21 +468,30 @@ public final class TrafficController {
     }
 
     private static boolean targetActionsDone(ActiveRoute r, VehicleStatusDto s) {
-        if (r.targetActions.isEmpty()) {
-            return true;
-        }
-        Set<String> done = new HashSet<>();
-        s.actions().stream().filter(a -> a.status().equals("FINISHED") || a.status().equals("FAILED"))
-                .forEach(a -> done.add(a.actionId()));
+        Set<String> finished = new HashSet<>();
+        s.actions().stream().filter(a -> a.status().equals("FINISHED")).forEach(a -> finished.add(a.actionId()));
+        return targetActionIds(r).stream().allMatch(finished::contains);
+    }
+
+    /** A target action the vehicle reports as FAILED, described for the route's reason. */
+    private static Optional<String> failedTargetAction(ActiveRoute r, VehicleStatusDto s) {
+        List<String> ids = targetActionIds(r);
+        return s.actions().stream()
+                .filter(a -> a.status().equals("FAILED") && ids.contains(a.actionId()))
+                .map(a -> "action %s failed%s".formatted(a.actionType(),
+                        a.resultDescription() == null ? "" : ": " + a.resultDescription()))
+                .findFirst();
+    }
+
+    /** Ids of the target actions as the fleet service assigns them when none were given. */
+    private static List<String> targetActionIds(ActiveRoute r) {
         long sequenceId = 2L * r.plan.lastIndex();
+        List<String> ids = new ArrayList<>();
         for (int i = 0; i < r.targetActions.size(); i++) {
             VehicleActionDto a = r.targetActions.get(i);
-            String id = a.actionId() != null ? a.actionId() : "%s-%d-%d".formatted(r.orderId, sequenceId, i);
-            if (!done.contains(id)) {
-                return false;
-            }
+            ids.add(a.actionId() != null ? a.actionId() : "%s-%d-%d".formatted(r.orderId, sequenceId, i));
         }
-        return true;
+        return ids;
     }
 
     private void finish(VehicleTraffic v, ActiveRoute r, RouteStatus status, String reason) {
@@ -542,10 +634,14 @@ public final class TrafficController {
                 cycle.addAll(chain.subList(chain.indexOf(current), chain.size()));
             }
         }
-        if (!cycle.isEmpty() && !cycle.equals(lastDeadlock)) {
+        Instant now = clock.instant();
+        // a lasting deadlock is announced again now and then, for whoever missed it, e.g. a restarted service
+        if (!cycle.isEmpty() && (!cycle.equals(lastDeadlock)
+                || Duration.between(deadlockAnnouncedAt, now).compareTo(DEADLOCK_REPEAT) >= 0)) {
             List<String> sorted = cycle.stream().sorted().toList();
             log.warn("deadlock between {}", sorted);
-            events.publish(DeadlockDetectedEvent.TYPE, new DeadlockDetectedEvent(sorted, clock.instant()));
+            events.publish(DeadlockDetectedEvent.TYPE, new DeadlockDetectedEvent(sorted, now));
+            deadlockAnnouncedAt = now;
         }
         lastDeadlock = cycle;
     }
@@ -607,6 +703,8 @@ public final class TrafficController {
         final String code;
         VehicleStatusDto status;
         ActiveRoute route;
+        /** an order of unknown origin this controller already asked the vehicle to cancel */
+        String cancelledOrphan;
 
         VehicleTraffic(String code) {
             this.code = code;

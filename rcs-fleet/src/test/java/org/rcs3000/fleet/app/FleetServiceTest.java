@@ -21,10 +21,12 @@ import org.rcs3000.contracts.fleet.ConnectionStatus;
 import org.rcs3000.contracts.fleet.OrderRefDto;
 import org.rcs3000.contracts.fleet.VehicleActionDto;
 import org.rcs3000.contracts.fleet.VehicleConnectionChangedEvent;
+import org.rcs3000.contracts.fleet.VehicleForgottenEvent;
 import org.rcs3000.contracts.fleet.VehicleStateUpdatedEvent;
 import org.rcs3000.contracts.fleet.VehicleStatusDto;
 import org.rcs3000.fleet.core.FleetErrorCode;
 import org.rcs3000.fleet.core.Routes;
+import org.rcs3000.fleet.core.VehicleSession;
 import org.rcs3000.simulator.core.Pose;
 import org.rcs3000.simulator.core.SimulatedAgv;
 import org.rcs3000.simulator.core.SimulationEngine;
@@ -143,6 +145,69 @@ class FleetServiceTest {
     }
 
     @Test
+    void aRestartedFleetServiceContinuesTheOrdersVehiclesAreDriving() {
+        fleet.sendRoute("AGV-1", Routes.on(MAP).node("A", 0, 0).node("B", 10, 0).horizon().node("C", 20, 0).build());
+        simulate(3);
+
+        fleet.stop();
+        fleet = new FleetService(new MasterClient(broker.newClient(), "uagv", clock), events,
+                s -> cache.put(s.code(), s), clock, Duration.ofSeconds(5));
+        fleet.start();
+        simulate(1.1);
+        OrderRefDto ref = fleet.extendRoute("AGV-1", Routes.on(MAP).node("B", 10, 0).node("C", 20, 0).build());
+
+        assertThat(ref.orderUpdateId()).isEqualTo(1);
+        assertThat(simulateUntil(30, () -> "C".equals(status("AGV-1").lastNodeId()))).isTrue();
+        assertThat(status("AGV-1").errors()).isEmpty();
+    }
+
+    @Test
+    void lostOrdersAreSentAgain() {
+        LossyTransport network = useLossyNetwork();
+        network.dropOrders.set(2);
+
+        fleet.sendRoute("AGV-1", Routes.on(MAP).node("A", 0, 0).node("B", 5, 0).build());
+        for (int i = 0; i < 20 && !"B".equals(status("AGV-1").lastNodeId()); i++) {
+            simulate(1);
+            fleet.checkHeartbeats();
+        }
+
+        assertThat(status("AGV-1").lastNodeId()).isEqualTo("B");
+        assertThat(status("AGV-1").errors()).isEmpty();
+    }
+
+    @Test
+    void aVehicleThatNeverGetsItsOrderIsReportedOutOfSync() {
+        LossyTransport network = useLossyNetwork();
+        network.dropOrders.set(100);
+
+        fleet.sendRoute("AGV-1", Routes.on(MAP).node("A", 0, 0).node("B", 5, 0).build());
+        for (int i = 0; i < 15; i++) {
+            simulate(1);
+            fleet.checkHeartbeats();
+        }
+
+        assertThat(status("AGV-1").errors()).singleElement()
+                .satisfies(e -> assertThat(e.errorType()).isEqualTo(VehicleSession.ORDER_OUT_OF_SYNC));
+
+        network.dropOrders.set(0);
+        fleet.sendRoute("AGV-1", Routes.on(MAP).node("A", 0, 0).node("B", 5, 0).build());
+        simulate(1);
+        assertThat(status("AGV-1").errors()).isEmpty();
+    }
+
+    /** Replaces the fleet service with one whose order messages can get lost. */
+    private LossyTransport useLossyNetwork() {
+        fleet.stop();
+        LossyTransport network = new LossyTransport(broker.newClient());
+        fleet = new FleetService(new MasterClient(network, "uagv", clock), events, s -> cache.put(s.code(), s), clock,
+                Duration.ofSeconds(5));
+        fleet.start();
+        simulate(1.1);
+        return network;
+    }
+
+    @Test
     void vehicleRejectionShowsUpInTheStatus() {
         fleet.sendRoute("AGV-1", Routes.on(MAP).node("X", 50, 50).node("Y", 60, 50).build());
         simulate(0.1);
@@ -177,17 +242,17 @@ class FleetServiceTest {
     }
 
     @Test
-    void cancelStopsTheVehicleAndClearsTheRoute() {
-        fleet.sendRoute("AGV-1", Routes.on(MAP).node("A", 0, 0).node("B", 20, 0).build());
+    void cancelStopsTheVehicleOnTheNextPointAndClearsTheRoute() {
+        fleet.sendRoute("AGV-1", Routes.on(MAP).node("A", 0, 0).node("B", 10, 0).node("C", 20, 0).build());
         simulate(5);
 
         String actionId = fleet.cancelOrder("AGV-1");
 
-        assertThat(simulateUntil(5, () -> status("AGV-1").actions().stream()
+        assertThat(simulateUntil(20, () -> status("AGV-1").actions().stream()
                 .anyMatch(a -> a.actionId().equals(actionId) && a.status().equals("FINISHED")))).isTrue();
         assertThat(status("AGV-1").remainingNodes()).isEmpty();
         assertThat(status("AGV-1").driving()).isFalse();
-        assertThat(status("AGV-1").x()).isBetween(1.0, 19.0);
+        assertThat(status("AGV-1").lastNodeId()).isEqualTo("B");
     }
 
     @Test
@@ -222,6 +287,21 @@ class FleetServiceTest {
         assertThat(status("AGV-2").connection()).isEqualTo(ConnectionStatus.OFFLINE);
         assertError(() -> fleet.sendRoute("AGV-2", Routes.on(MAP).node("A", 0, 10).build()),
                 FleetErrorCode.VEHICLE_NOT_ONLINE);
+    }
+
+    @Test
+    void onlyVehiclesThatLeftCanBeRemoved() {
+        List<VehicleForgottenEvent> forgotten = new CopyOnWriteArrayList<>();
+        events.subscribe(VehicleForgottenEvent.TYPE, "test", VehicleForgottenEvent.class, e -> forgotten.add(e.payload()));
+
+        assertError(() -> fleet.forget("AGV-2"), FleetErrorCode.VEHICLE_STILL_ONLINE);
+        engine.remove("AGV-2");
+        fleet.forget("AGV-2");
+
+        assertThat(fleet.vehicles()).extracting(VehicleStatusDto::code).containsExactly("AGV-1");
+        assertThat(forgotten).extracting(VehicleForgottenEvent::vehicleCode).containsExactly("AGV-2");
+        assertThat(broker.retainedMessage("uagv/v2/RCS3000-SIM/AGV-2/connection")).isNull();
+        assertError(() -> fleet.forget("AGV-2"), FleetErrorCode.VEHICLE_NOT_FOUND);
     }
 
     @Test

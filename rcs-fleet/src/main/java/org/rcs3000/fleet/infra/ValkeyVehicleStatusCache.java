@@ -22,4 +22,9 @@ public class ValkeyVehicleStatusCache implements VehicleStatusCache {
     public void put(VehicleStatusDto status) {
         redis.opsForHash().put(KEY, status.code(), json.writeValueAsString(status));
     }
+
+    @Override
+    public void remove(String code) {
+        redis.opsForHash().delete(KEY, code);
+    }
 }

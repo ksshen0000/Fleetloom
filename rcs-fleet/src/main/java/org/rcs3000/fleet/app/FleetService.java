@@ -15,6 +15,7 @@ import org.rcs3000.contracts.fleet.ConnectionStatus;
 import org.rcs3000.contracts.fleet.OrderRefDto;
 import org.rcs3000.contracts.fleet.RouteCommandDto;
 import org.rcs3000.contracts.fleet.VehicleConnectionChangedEvent;
+import org.rcs3000.contracts.fleet.VehicleForgottenEvent;
 import org.rcs3000.contracts.fleet.VehicleStateUpdatedEvent;
 import org.rcs3000.contracts.fleet.VehicleStatusDto;
 import org.rcs3000.fleet.core.FleetErrorCode;
@@ -44,6 +45,9 @@ import org.slf4j.LoggerFactory;
 public class FleetService implements MasterListener {
 
     private static final Logger log = LoggerFactory.getLogger(FleetService.class);
+
+    static final Duration RESEND_AFTER = Duration.ofSeconds(3);
+    static final int MAX_RESENDS = 3;
 
     private final MasterClient master;
     private final EventBus events;
@@ -94,9 +98,17 @@ public class FleetService implements MasterListener {
         session(vehicle).ifPresent(s -> s.onFactsheet(factsheet, clock.instant()));
     }
 
-    /** Marks vehicles that went silent; called periodically (requirement VEH-07). */
+    /**
+     * Marks vehicles that went silent (VEH-07) and sends lost orders again (FLT-06); called
+     * periodically.
+     */
     public void checkHeartbeats() {
         for (VehicleSession s : sessions.values()) {
+            s.orderToResend(clock.instant(), RESEND_AFTER, MAX_RESENDS).ifPresent(order -> {
+                log.warn("vehicle {} does not report order {} update {}; sending it again", s.code(), order.orderId(),
+                        order.orderUpdateId());
+                master.sendOrder(s.id(), order);
+            });
             s.checkHeartbeat(clock.instant(), heartbeatTimeout).ifPresent(change -> {
                 connectionChanged(change);
                 cache.put(s.status());
@@ -134,6 +146,24 @@ public class FleetService implements MasterListener {
                 "vehicle %s has not sent a factsheet yet".formatted(code)));
     }
 
+    /**
+     * Drops a vehicle that is no longer online, e.g. a deleted simulated vehicle, so it stops showing
+     * up as offline. Should it send a message again it comes back as a new vehicle.
+     */
+    public void forget(String code) {
+        VehicleSession s = require(code);
+        if (s.connection() == ConnectionStatus.ONLINE) {
+            throw new BizException(FleetErrorCode.VEHICLE_STILL_ONLINE,
+                    "vehicle %s is online; only vehicles that left can be removed".formatted(code));
+        }
+        sessions.remove(code, s);
+        cache.remove(code);
+        // otherwise its last will, retained by the broker, would bring it back after a restart
+        master.clearRetained(s.id());
+        log.info("vehicle {} removed", code);
+        events.publish(VehicleForgottenEvent.TYPE, new VehicleForgottenEvent(code, clock.instant()));
+    }
+
     // ------------------------------------------------------------------ commands
 
     /** Sends a new order (FLT-02). The vehicle reports acceptance or rejection in its state. */
@@ -142,6 +172,7 @@ public class FleetService implements MasterListener {
         String orderId = code + "-" + UUID.randomUUID().toString().substring(0, 8);
         Order order = s.newOrder(orderId, route);
         master.sendOrder(s.id(), order);
+        s.orderSent(order, clock.instant());
         return new OrderRefDto(code, order.orderId(), order.orderUpdateId());
     }
 
@@ -150,6 +181,7 @@ public class FleetService implements MasterListener {
         VehicleSession s = requireOnline(code);
         Order order = s.updateOrder(route);
         master.sendOrder(s.id(), order);
+        s.orderSent(order, clock.instant());
         return new OrderRefDto(code, order.orderId(), order.orderUpdateId());
     }
 
@@ -163,6 +195,11 @@ public class FleetService implements MasterListener {
 
     public String cancelOrder(String code) {
         return instant(code, ActionTypes.CANCEL_ORDER);
+    }
+
+    /** Ends charging so the vehicle can leave the charger, e.g. for a new transport (DSP-07). */
+    public String stopCharging(String code) {
+        return instant(code, ActionTypes.STOP_CHARGING);
     }
 
     public String requestFactsheet(String code) {
