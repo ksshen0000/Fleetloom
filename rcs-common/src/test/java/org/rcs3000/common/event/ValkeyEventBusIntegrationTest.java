@@ -108,6 +108,36 @@ class ValkeyEventBusIntegrationTest {
     }
 
     @Test
+    void subscriptionCarriesOnAfterTheConnectionWasLost() {
+        String type = "Moved-" + System.nanoTime();
+        List<Moved> received = new CopyOnWriteArrayList<>();
+        consumerA.subscribe(type, "traffic", Moved.class, e -> received.add(e.payload()));
+
+        // what Spring does with a paused test context, and much like Valkey going away for a moment
+        connectionFactory.stop();
+        connectionFactory.start();
+        publisher.publish(type, new Moved("AGV-1", 1));
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> received.equals(List.of(new Moved("AGV-1", 1))));
+    }
+
+    @Test
+    void consumerGroupLostWithTheDataIsCreatedAgain() {
+        String type = "Moved-" + System.nanoTime();
+        List<Moved> received = new CopyOnWriteArrayList<>();
+        consumerA.subscribe(type, "traffic", Moved.class, e -> received.add(e.payload()));
+        StringRedisTemplate redis = new StringRedisTemplate(connectionFactory);
+
+        // e.g. Valkey restarted without persistence
+        redis.delete(ValkeyEventBus.streamKey(type));
+        await().atMost(Duration.ofSeconds(10)).until(() ->
+                Boolean.TRUE.equals(redis.hasKey(ValkeyEventBus.streamKey(type))));
+        publisher.publish(type, new Moved("AGV-1", 2));
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> received.equals(List.of(new Moved("AGV-1", 2))));
+    }
+
+    @Test
     void failedHandlerLeavesTheEventPending() {
         String type = "Moved-" + System.nanoTime();
         List<Moved> attempts = new CopyOnWriteArrayList<>();

@@ -21,17 +21,25 @@ import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.stream.StreamMessageListenerContainer;
 import org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions;
+import org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamReadRequest;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Event bus on Valkey (Redis-compatible) Streams. One stream per event type, key
  * {@code rcs:events:<type>}, trimmed to about {@link #MAX_LENGTH} entries. Consumer groups are created
  * on first subscription; events are acknowledged after the handler returns.
+ *
+ * <p>A subscription outlives connection problems: when Valkey restarts or the connection drops (or
+ * the connection factory is stopped and started again, as Spring does with paused test contexts),
+ * reading resumes once Valkey can be reached again, and a consumer group lost with the data is
+ * created anew.
  */
 public final class ValkeyEventBus implements EventBus, AutoCloseable {
 
     static final long MAX_LENGTH = 10_000;
     private static final Logger log = LoggerFactory.getLogger(ValkeyEventBus.class);
+    /** pause after a failed read, so that an unreachable Valkey is not polled in a tight loop */
+    static final Duration RETRY_PAUSE = Duration.ofSeconds(1);
 
     private final StringRedisTemplate redis;
     private final JsonMapper json;
@@ -50,11 +58,6 @@ public final class ValkeyEventBus implements EventBus, AutoCloseable {
         this.container = StreamMessageListenerContainer.create(connectionFactory,
                 StreamMessageListenerContainerOptions.builder()
                         .pollTimeout(Duration.ofMillis(200))
-                        .errorHandler(e -> {
-                            if (!closing) {
-                                log.warn("event stream polling failed: {}", e.getMessage());
-                            }
-                        })
                         .build());
         this.container.start();
     }
@@ -95,20 +98,44 @@ public final class ValkeyEventBus implements EventBus, AutoCloseable {
     }
 
     private <T> void listen(String key, String type, String group, Class<T> payloadType, Consumer<EventEnvelope<T>> handler) {
-        container.receive(org.springframework.data.redis.connection.stream.Consumer.from(group, consumerName),
-                StreamOffset.create(key, ReadOffset.lastConsumed()),
-                record -> {
-                    Map<String, String> f = record.getValue();
-                    try {
-                        handler.accept(new EventEnvelope<>(f.get("eventId"), f.get("type"),
-                                Instant.parse(f.get("occurredAt")), f.get("source"),
-                                json.readValue(f.get("payload"), payloadType)));
-                        redis.opsForStream().acknowledge(key, group, record.getId());
-                    } catch (RuntimeException e) {
-                        log.error("handler for {} in group {} failed; event {} stays pending", type, group,
-                                f.get("eventId"), e);
-                    }
-                });
+        StreamReadRequest<String> request = StreamReadRequest.builder(StreamOffset.create(key, ReadOffset.lastConsumed()))
+                .consumer(org.springframework.data.redis.connection.stream.Consumer.from(group, consumerName))
+                .autoAcknowledge(false)
+                .cancelOnError(e -> false)
+                .errorHandler(e -> readFailed(key, group, e))
+                .build();
+        container.register(request, record -> {
+            Map<String, String> f = record.getValue();
+            try {
+                handler.accept(new EventEnvelope<>(f.get("eventId"), f.get("type"),
+                        Instant.parse(f.get("occurredAt")), f.get("source"),
+                        json.readValue(f.get("payload"), payloadType)));
+                redis.opsForStream().acknowledge(key, group, record.getId());
+            } catch (RuntimeException e) {
+                log.error("handler for {} in group {} failed; event {} stays pending", type, group,
+                        f.get("eventId"), e);
+            }
+        });
+    }
+
+    /** Runs on the polling thread of the subscription, which carries on reading afterwards. */
+    private void readFailed(String key, String group, Throwable e) {
+        if (closing) {
+            return;
+        }
+        log.warn("reading events of {} for group {} failed, retrying: {}", key, group, e.getMessage());
+        if (hasMessage(e, "NOGROUP")) {
+            try {
+                createGroupIfAbsent(key, group);
+            } catch (RuntimeException again) {
+                log.debug("could not create group {} yet: {}", group, again.getMessage());
+            }
+        }
+        try {
+            Thread.sleep(RETRY_PAUSE);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void createGroupIfAbsent(String key, String group) {
@@ -124,8 +151,12 @@ public final class ValkeyEventBus implements EventBus, AutoCloseable {
 
     /** XGROUP CREATE fails with BUSYGROUP when the group already exists. */
     private static boolean isBusyGroup(Throwable e) {
+        return hasMessage(e, "BUSYGROUP");
+    }
+
+    private static boolean hasMessage(Throwable e, String text) {
         for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t.getMessage() != null && t.getMessage().contains("BUSYGROUP")) {
+            if (t.getMessage() != null && t.getMessage().contains(text)) {
                 return true;
             }
         }
