@@ -40,9 +40,31 @@ class TrafficStressTest {
     void randomTrafficStaysSafeAndKeepsMoving() {
         TrafficHarness h = new TrafficHarness(TestMaps.grid(4, 4, 4))
                 .vehicle("V1", "P00").vehicle("V2", "P03").vehicle("V3", "P30").vehicle("V4", "P33");
+        int[] counts = randomTraffic(h, List.of("V1", "V2", "V3", "V4"), 7);
+
+        assertThat(h.minDistance()).isGreaterThan(2.0);
+        // 94 when deadlocks are only waited out by detours, 113 when they are resolved
+        assertThat(counts[1]).isGreaterThan(105);
+        assertThat(counts[1]).isGreaterThanOrEqualTo(counts[0] - 4);
+    }
+
+    /** Six vehicles on sixteen points: deadlocks happen, and must be resolved rather than last. */
+    @Test
+    void denseRandomTrafficDoesNotGetStuck() {
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(4, 4, 4)).vehicle("V1", "P00").vehicle("V2", "P03")
+                .vehicle("V3", "P30").vehicle("V4", "P33").vehicle("V5", "P11").vehicle("V6", "P22");
+        int[] counts = randomTraffic(h, List.of("V1", "V2", "V3", "V4", "V5", "V6"), 11);
+
+        assertThat(h.minDistance()).isGreaterThan(2.0);
+        // 73 without resolving deadlocks, 95 with
+        assertThat(counts[1]).isGreaterThan(85);
+        assertThat(counts[1]).isGreaterThanOrEqualTo(counts[0] - 6);
+    }
+
+    /** Ten simulated minutes of random targets; returns the routes requested and the arrivals. */
+    private static int[] randomTraffic(TrafficHarness h, List<String> vehicles, long seed) {
         h.run(0.2);
-        Random random = new Random(7);
-        List<String> vehicles = List.of("V1", "V2", "V3", "V4");
+        Random random = new Random(seed);
         Map<String, String> targets = new HashMap<>();
         int requests = 0;
 
@@ -75,9 +97,7 @@ class TrafficStressTest {
         }
 
         long arrivals = h.progress.stream().filter(p -> p.status() == org.rcs3000.contracts.traffic.RouteStatus.ARRIVED).count();
-        assertThat(h.minDistance()).isGreaterThan(2.0);
-        assertThat(arrivals).isGreaterThan(40);
-        assertThat(arrivals).isGreaterThanOrEqualTo(requests - vehicles.size());
+        return new int[] {requests, (int) arrivals};
     }
 
     private static RouteCommandDto line(double fixed, double from, double to, String a, String b, String c, boolean horizontal) {

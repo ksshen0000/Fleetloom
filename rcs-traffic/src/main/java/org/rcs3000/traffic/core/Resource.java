@@ -3,10 +3,14 @@ package org.rcs3000.traffic.core;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Something only one vehicle may hold at a time: a point, a path (both directions) or a mutex area. */
+/**
+ * Something only one vehicle may hold at a time: a point, a path (both directions) or a mutex area.
+ * A corridor is the exception: vehicles driving through it in the same direction share it, see
+ * {@link CorridorTable}.
+ */
 public record Resource(Kind kind, String code) {
 
-    public enum Kind { NODE, PATH, AREA }
+    public enum Kind { NODE, PATH, AREA, CORRIDOR }
 
     public static Resource node(String code) {
         return new Resource(Kind.NODE, code);
@@ -14,6 +18,10 @@ public record Resource(Kind kind, String code) {
 
     public static Resource path(String code) {
         return new Resource(Kind.PATH, code);
+    }
+
+    public static Resource corridor(String id) {
+        return new Resource(Kind.CORRIDOR, id);
     }
 
     /** Resources needed to stand on {@code node}. */

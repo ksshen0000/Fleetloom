@@ -53,6 +53,35 @@ public final class TestMaps {
                 List.of());
     }
 
+    /**
+     * A single-lane corridor A - B - C - D between two junctions, each with two spurs: W1 and W2 at
+     * the west end (A), E1 and E2 at the east end (D). The corridor runs along y = 0 from x = 0 to 12.
+     */
+    public static MapTopologyDto corridorBetweenJunctions() {
+        PathDirection both = PathDirection.BIDIRECTIONAL;
+        double spur = Math.hypot(4, 4);
+        return new MapTopologyDto(MAP, 1,
+                List.of(point("W1", -4, 4), point("W2", -4, -4), point("A", 0, 0), point("B", 4, 0), point("C", 8, 0),
+                        point("D", 12, 0), point("E1", 16, 4), point("E2", 16, -4)),
+                List.of(path("W1A", "W1", "A", both, spur), path("W2A", "W2", "A", both, spur),
+                        path("AB", "A", "B", both, 4), path("BC", "B", "C", both, 4), path("CD", "C", "D", both, 4),
+                        path("DE1", "D", "E1", both, spur), path("DE2", "D", "E2", both, spur)),
+                List.of());
+    }
+
+    /**
+     * A road A - B - C - D with a side branch S off B (4 m north of it): where two vehicles meet
+     * head-on between B and D, one can back off into S.
+     */
+    public static MapTopologyDto roadWithSideBranch() {
+        PathDirection both = PathDirection.BIDIRECTIONAL;
+        return new MapTopologyDto(MAP, 1,
+                List.of(point("A", 0, 0), point("B", 4, 0), point("C", 8, 0), point("D", 12, 0), point("S", 4, 4)),
+                List.of(path("AB", "A", "B", both, 4), path("BC", "B", "C", both, 4), path("CD", "C", "D", both, 4),
+                        path("BS", "B", "S", both, 4)),
+                List.of());
+    }
+
     public static String name(int row, int col) {
         return "P" + row + col;
     }

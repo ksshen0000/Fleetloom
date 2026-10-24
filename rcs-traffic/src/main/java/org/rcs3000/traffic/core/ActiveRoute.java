@@ -2,6 +2,7 @@ package org.rcs3000.traffic.core;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import org.rcs3000.contracts.fleet.VehicleActionDto;
 import org.rcs3000.contracts.traffic.RouteStatus;
@@ -24,6 +25,20 @@ final class ActiveRoute {
     Resource blockedResource;
     Instant waitingSince;
     boolean blockedEventSent;
+    /**
+     * The corridor it waits to enter, the direction it wants to drive and since when it waits; kept
+     * until it is in, even while something else holds it up meanwhile, so that it keeps its turn.
+     */
+    String corridorWaiting;
+    /**
+     * After backing off out of a deadlock: it stops at node {@code holdIndex} until none of
+     * {@code holdFor} still has {@code holdNodes} (its way on from there) ahead of it; -1 when not.
+     */
+    int holdIndex = -1;
+    Set<String> holdFor = Set.of();
+    Set<String> holdNodes = Set.of();
+    int corridorDirection;
+    Instant corridorWaitSince;
 
     ActiveRoute(String routeId, String mapCode, PlannedRoute plan, List<VehicleActionDto> targetActions, Instant createdAt) {
         this.routeId = routeId;

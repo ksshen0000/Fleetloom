@@ -60,8 +60,9 @@ class TrafficControllerTest {
         h.traffic().requestRoute("AGV-1", "P05", null);
 
         // 3 nodes / 5 m lookahead with 4 m edges: two edges ahead at the start
-        assertThat(reservedBy(h, "AGV-1")).containsExactly("NODE:P00", "NODE:P01", "NODE:P02", "NODE:P03",
-                "PATH:P00-P01", "PATH:P01-P02", "PATH:P02-P03");
+        // the row is a single-lane corridor: it is taken as a whole, in the vehicle's direction
+        assertThat(reservedBy(h, "AGV-1")).containsExactly("CORRIDOR:P00~P05", "NODE:P00", "NODE:P01", "NODE:P02",
+                "NODE:P03", "PATH:P00-P01", "PATH:P01-P02", "PATH:P02-P03");
         h.runUntil(60, () -> h.vehicle("AGV-1").lastNodeId().equals("P02"));
         h.run(0.1);
 
@@ -182,6 +183,81 @@ class TrafficControllerTest {
         // while it lasts it is announced again, for services that missed it
         h.run(TrafficController.DEADLOCK_REPEAT.toSeconds());
         assertThat(h.deadlocks).hasSize(2);
+    }
+
+    @Test
+    void aDeadlockIsResolvedByOneVehicleBackingOffIntoASideBranch() {
+        // AGV-2 stands at the dead end D: it can only wait until AGV-1 is out of its way
+        TrafficHarness h = new TrafficHarness(TestMaps.roadWithSideBranch()).vehicle("AGV-1", "A").vehicle("AGV-2", "D");
+        h.run(0.2);
+
+        h.traffic().requestRoute("AGV-1", "D", null);
+        h.run(1);
+        h.traffic().requestRoute("AGV-2", "A", null);
+        assertThat(h.runUntil(30, () -> !h.deadlocks.isEmpty())).isTrue();
+
+        // AGV-1 backs off into S, lets AGV-2 pass and then drives on to D
+        assertThat(h.runUntil(120, () -> h.arrived("AGV-1") && h.arrived("AGV-2"))).isTrue();
+        assertThat(h.traffic().route("AGV-1").orElseThrow().nodes()).contains("S");
+        assertThat(h.minDistance()).isGreaterThan(SAFE_DISTANCE);
+    }
+
+    @Test
+    void vehiclesMeetingAtACorridorTakeTurnsInsteadOfMeetingHeadOn() {
+        TrafficHarness h = new TrafficHarness(TestMaps.corridorBetweenJunctions())
+                .vehicle("AGV-1", "W1").vehicle("AGV-2", "E2");
+        h.run(0.2);
+
+        h.traffic().requestRoute("AGV-1", "E1", null);
+        h.traffic().requestRoute("AGV-2", "W2", null);
+        h.run(1);
+        // the second one waits before the junction, out of the way of the first coming out
+        assertThat(h.traffic().route("AGV-2").orElseThrow().blockedResource()).isEqualTo("CORRIDOR:A~D");
+        assertThat(reservedBy(h, "AGV-2")).doesNotContain("NODE:D");
+
+        assertThat(h.runUntil(120, () -> h.arrived("AGV-1") && h.arrived("AGV-2"))).isTrue();
+        assertThat(h.deadlocks).isEmpty();
+        assertThat(h.minDistance()).isGreaterThan(SAFE_DISTANCE);
+    }
+
+    @Test
+    void vehiclesFollowEachOtherThroughACorridor() {
+        TrafficHarness h = new TrafficHarness(TestMaps.corridorBetweenJunctions())
+                .vehicle("AGV-1", "W1").vehicle("AGV-2", "W2");
+        h.run(0.2);
+
+        h.traffic().requestRoute("AGV-1", "E1", null);
+        h.traffic().requestRoute("AGV-2", "E2", null);
+        boolean shared = false;
+        for (int i = 0; i < 2400 && !(h.arrived("AGV-1") && h.arrived("AGV-2")); i++) {
+            h.run(0.05);
+            shared |= reservedBy(h, "AGV-1").contains("CORRIDOR:A~D") && reservedBy(h, "AGV-2").contains("CORRIDOR:A~D");
+        }
+
+        assertThat(h.arrived("AGV-1") && h.arrived("AGV-2")).isTrue();
+        assertThat(shared).isTrue();
+        assertThat(h.minDistance()).isGreaterThan(SAFE_DISTANCE);
+        assertThat(h.traffic().reservations()).noneMatch(r -> r.resource().startsWith("CORRIDOR"));
+    }
+
+    @Test
+    void aStreamOneWayDoesNotKeepAVehicleWaitingTheOtherWayForEver() {
+        TrafficHarness h = new TrafficHarness(TestMaps.corridorBetweenJunctions())
+                .vehicle("AGV-1", "W1").vehicle("AGV-2", "W2").vehicle("AGV-3", "E2");
+        h.run(0.2);
+
+        h.traffic().requestRoute("AGV-1", "E1", null);
+        h.runUntil(30, () -> h.vehicle("AGV-1").lastNodeId().equals("B"));
+        h.traffic().requestRoute("AGV-3", "W1", null);
+        h.run(0.5);
+        // AGV-2 could follow AGV-1 in, but AGV-3 waits longer to come the other way
+        h.traffic().requestRoute("AGV-2", "E2", null);
+        h.run(1);
+        assertThat(h.traffic().route("AGV-2").orElseThrow().blockedResource()).isEqualTo("CORRIDOR:A~D");
+
+        // AGV-3 needs W1, which AGV-1 leaves; AGV-2 needs E2, which AGV-3 leaves
+        assertThat(h.runUntil(180, () -> h.arrived("AGV-1") && h.arrived("AGV-2") && h.arrived("AGV-3"))).isTrue();
+        assertThat(h.minDistance()).isGreaterThan(SAFE_DISTANCE);
     }
 
     @Test

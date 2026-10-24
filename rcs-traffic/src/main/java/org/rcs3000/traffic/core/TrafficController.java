@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.rcs3000.common.error.BizException;
 import org.rcs3000.common.event.EventBus;
@@ -62,9 +63,12 @@ public final class TrafficController {
     private final Map<String, RoadGraph> graphs = new HashMap<>();
     private final Set<String> pendingMapReloads = new HashSet<>();
     private final Map<String, ReservationTable> tables = new HashMap<>();
+    private final Map<String, CorridorTable> corridorTables = new HashMap<>();
     private final Map<String, VehicleTraffic> vehicles = new HashMap<>();
     private Set<String> lastDeadlock = Set.of();
     private Instant deadlockAnnouncedAt = Instant.MIN;
+    /** when the current deadlock was found, or last tried to resolve */
+    private Instant deadlockSince = Instant.MIN;
 
     public TrafficController(PathPlanner planner, FleetGateway fleet, MapProvider maps, EventBus events,
             TrafficSettings settings, Clock clock) {
@@ -155,6 +159,7 @@ public final class TrafficController {
             r.clearBlocked();
             progressed(v, r, "vehicle removed");
         }
+        corridorTables.values().forEach(t -> t.releaseAll(vehicleCode));
         for (String mapCode : List.copyOf(tables.keySet())) {
             tables.get(mapCode).releaseAll(vehicleCode);
             wakeWaiting(mapCode, vehicleCode);
@@ -279,6 +284,7 @@ public final class TrafficController {
             throw new BizException(TrafficErrorCode.ROUTE_ACTIVE, "cancel the route of %s first".formatted(vehicleCode));
         }
         tables.values().forEach(t -> t.releaseAll(vehicleCode));
+        corridorTables.values().forEach(t -> t.releaseAll(vehicleCode));
         log.warn("all reservations of vehicle {} released by hand", vehicleCode);
     }
 
@@ -315,6 +321,8 @@ public final class TrafficController {
         List<ReservationDto> result = new ArrayList<>();
         tables.forEach((map, table) -> table.snapshot().forEach((r, holder) ->
                 result.add(new ReservationDto(map, r.toString(), holder))));
+        corridorTables.forEach((map, table) -> table.snapshot().forEach((corridor, holders) ->
+                holders.forEach(holder -> result.add(new ReservationDto(map, Resource.corridor(corridor).toString(), holder)))));
         result.sort(Comparator.comparing(ReservationDto::mapCode).thenComparing(ReservationDto::resource));
         return result;
     }
@@ -355,6 +363,7 @@ public final class TrafficController {
             }
         }
         table(r.mapCode).retainOnly(v.code, needed(r));
+        corridorTable(r.mapCode).retainOnly(v.code, neededCorridors(r));
         extendAndSend(v, r);
         wakeWaiting(r.mapCode, v.code);
     }
@@ -389,22 +398,30 @@ public final class TrafficController {
             log.error("could not extend the route of {}; it stops at {}", v.code, r.plan.nodes().get(before), e);
             r.releasedIndex = before;
             table(r.mapCode).retainOnly(v.code, needed(r));
+            corridorTable(r.mapCode).retainOnly(v.code, neededCorridors(r));
         }
     }
 
     private void extend(VehicleTraffic v, ActiveRoute r) {
         RoadGraph graph = graph(r.mapCode);
         ReservationTable table = table(r.mapCode);
+        if (r.holdIndex >= 0 && othersAreThrough(r)) {
+            r.holdIndex = -1;
+        }
         int i = r.releasedIndex;
         double ahead = 0;
         for (int k = r.passedIndex; k < i; k++) {
             ahead += r.plan.edges().get(k).length();
         }
-        while (i < r.plan.lastIndex() && (i - r.passedIndex < settings.lookaheadNodes() || ahead < settings.lookaheadDistance())) {
+        while (i < r.plan.lastIndex() && (r.holdIndex < 0 || i < r.holdIndex)
+                && (i - r.passedIndex < settings.lookaheadNodes() || ahead < settings.lookaheadDistance())) {
             RoadGraph.Edge edge = r.plan.edges().get(i);
             Set<Resource> wanted = new LinkedHashSet<>(Resource.of(edge));
             wanted.addAll(Resource.of(graph.node(edge.to()).orElseThrow()));
-            Optional<Map.Entry<Resource, String>> blocker = table.blocker(v.code, wanted);
+            List<Entry> corridorsAhead = corridorsAhead(graph, r, i);
+            // the corridor first: whoever waits for one should count as waiting for it, see waiterBefore
+            Optional<Map.Entry<Resource, String>> blocker = corridorBlocker(v, r, corridorsAhead)
+                    .or(() -> table.blocker(v.code, wanted));
             if (blocker.isPresent()) {
                 if (!blocker.get().getValue().equals(r.blockedBy)) {
                     r.waitingSince = null;
@@ -416,11 +433,99 @@ public final class TrafficController {
                 return;
             }
             table.tryReserve(v.code, wanted);
+            for (Entry e : corridorsAhead) {
+                corridorTable(r.mapCode).acquire(e.corridor().id(), e.direction(), v.code);
+                if (e.corridor().id().equals(r.corridorWaiting)) {
+                    r.corridorWaiting = null;
+                }
+            }
             ahead += edge.length();
             i++;
         }
         r.releasedIndex = i;
         r.clearBlocked();
+    }
+
+    // ------------------------------------------------------------------ corridors
+
+    /** Whether the vehicles a backed-off vehicle lets pass no longer need any point of its way on. */
+    private boolean othersAreThrough(ActiveRoute r) {
+        for (String code : r.holdFor) {
+            VehicleTraffic o = vehicles.get(code);
+            ActiveRoute other = o == null ? null : o.route;
+            if (other != null && other.status.isActive() && other.plan.nodes()
+                    .subList(other.passedIndex, other.plan.nodes().size()).stream().anyMatch(r.holdNodes::contains)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** A corridor and the direction a route drives through it. */
+    private record Entry(RoadGraph.Corridor corridor, int direction) {
+    }
+
+    /**
+     * Corridors a vehicle needs before it may drive edge {@code i}: the one of that edge, and the one of
+     * the edge after it. The second is taken one edge early so that a vehicle that has to wait does so
+     * before the junction at the corridor's end, not on it, where it would block those coming out.
+     */
+    private static List<Entry> corridorsAhead(RoadGraph graph, ActiveRoute r, int i) {
+        List<Entry> result = new ArrayList<>();
+        for (int k = i; k <= i + 1 && k < r.plan.lastIndex(); k++) {
+            RoadGraph.Edge edge = r.plan.edges().get(k);
+            graph.corridor(edge.pathCode()).ifPresent(c -> {
+                Entry e = new Entry(c, c.direction(edge));
+                if (!result.contains(e)) {
+                    result.add(e);
+                }
+            });
+        }
+        return result;
+    }
+
+    private Optional<Map.Entry<Resource, String>> corridorBlocker(VehicleTraffic v, ActiveRoute r, List<Entry> entries) {
+        for (Entry e : entries) {
+            Resource resource = Resource.corridor(e.corridor().id());
+            Optional<String> blocker = corridorTable(r.mapCode).blocker(e.corridor().id(), e.direction(), v.code,
+                    waiterBefore(v, r, e.corridor().id(), e.direction()));
+            if (blocker.isPresent()) {
+                if (!e.corridor().id().equals(r.corridorWaiting)) {
+                    r.corridorWaiting = e.corridor().id();
+                    r.corridorDirection = e.direction();
+                    r.corridorWaitSince = clock.instant();
+                }
+                return Optional.of(Map.entry(resource, blocker.get()));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Another vehicle that waits longer than {@code v} to drive through the corridor the other way. It
+     * goes first: otherwise a steady stream in one direction could keep it waiting for ever.
+     */
+    private Optional<String> waiterBefore(VehicleTraffic v, ActiveRoute r, String corridor, int direction) {
+        Instant since = corridor.equals(r.corridorWaiting) ? r.corridorWaitSince : clock.instant();
+        Comparator<Map.Entry<Instant, String>> order = Map.Entry.<Instant, String>comparingByKey()
+                .thenComparing(Map.Entry.comparingByValue());
+        return vehicles.values().stream()
+                .filter(o -> o != v && o.route != null && o.route.status.isActive() && o.route.mapCode.equals(r.mapCode)
+                        && corridor.equals(o.route.corridorWaiting) && o.route.corridorDirection == -direction)
+                .map(o -> Map.entry(o.route.corridorWaitSince, o.code))
+                .filter(w -> order.compare(w, Map.entry(since, v.code)) < 0)
+                .min(order)
+                .map(Map.Entry::getValue);
+    }
+
+    /** Corridors the vehicle is in or about to enter: those of the edges from where it is to the end of its base. */
+    private Set<String> neededCorridors(ActiveRoute r) {
+        RoadGraph graph = graph(r.mapCode);
+        Set<String> needed = new HashSet<>();
+        for (int i = r.passedIndex; i <= r.releasedIndex && i < r.plan.lastIndex(); i++) {
+            graph.corridor(r.plan.edges().get(i).pathCode()).ifPresent(c -> needed.add(c.id()));
+        }
+        return needed;
     }
 
     /**
@@ -435,12 +540,7 @@ public final class TrafficController {
     /** Looks for a way around resources held by other vehicles, starting at the decision point. */
     private void tryDetour(VehicleTraffic v, ActiveRoute r) {
         RoadGraph graph = graph(r.mapCode);
-        Set<Resource> occupied = new HashSet<>();
-        table(r.mapCode).snapshot().forEach((resource, holder) -> {
-            if (!holder.equals(v.code)) {
-                occupied.add(resource);
-            }
-        });
+        Set<Resource> occupied = occupiedByOthers(v, graph);
         String decision = r.plan.nodes().get(r.releasedIndex);
         Optional<PlannedRoute> detour = planner.plan(graph,
                 new PathPlanner.Request(decision, r.target(), settings.defaultSpeed(), occupied, Map.of()));
@@ -455,12 +555,30 @@ public final class TrafficController {
         log.info("vehicle {} takes a detour from {}: {}", v.code, decision, detour.get().nodes());
         r.plan = r.plan.splice(r.releasedIndex, detour.get());
         r.clearBlocked();
+        r.corridorWaiting = null;
         try {
             fleet.extendRoute(v.code, command(r, r.releasedIndex));
         } catch (RuntimeException e) {
             log.error("could not send the detour of {}", v.code, e);
         }
         extendAndSend(v, r);
+    }
+
+    /** What other vehicles hold on the map, including every path of the corridors they drive through. */
+    private Set<Resource> occupiedByOthers(VehicleTraffic v, RoadGraph graph) {
+        Set<Resource> occupied = new HashSet<>();
+        table(graph.mapCode()).snapshot().forEach((resource, holder) -> {
+            if (!holder.equals(v.code)) {
+                occupied.add(resource);
+            }
+        });
+        corridorTable(graph.mapCode()).snapshot().forEach((corridor, holders) -> {
+            if (!holders.contains(v.code)) {
+                graph.corridors().stream().filter(c -> c.id().equals(corridor)).findFirst()
+                        .ifPresent(c -> c.paths().forEach(p -> occupied.add(Resource.path(p))));
+            }
+        });
+        return occupied;
     }
 
     private boolean rejected(VehicleStatusDto s, ActiveRoute r) {
@@ -500,6 +618,7 @@ public final class TrafficController {
         ReservationTable table = table(r.mapCode);
         if (status == RouteStatus.ARRIVED) {
             table.retainOnly(v.code, Resource.of(graph(r.mapCode).node(r.target()).orElseThrow()));
+            corridorTable(r.mapCode).releaseAll(v.code);
         } else {
             // The vehicle may still drive to the end of what it was given (a rejected update leaves the old
             // base in force, a cancelled one still brakes): keep all of it. Once the vehicle stands on a
@@ -580,6 +699,9 @@ public final class TrafficController {
         } else {
             return; // still moving: keep whatever it holds until it stops
         }
+        if (!s.driving()) {
+            corridorTable(graph.mapCode()).releaseAll(v.code);
+        }
         Set<Resource> conflicts = table.forceReserve(v.code, hold);
         if (!conflicts.isEmpty()) {
             log.error("vehicle {} occupies {} which another vehicle had reserved", v.code, conflicts);
@@ -643,7 +765,109 @@ public final class TrafficController {
             events.publish(DeadlockDetectedEvent.TYPE, new DeadlockDetectedEvent(sorted, now));
             deadlockAnnouncedAt = now;
         }
+        if (!cycle.equals(lastDeadlock)) {
+            deadlockSince = now;
+        } else if (!cycle.isEmpty() && Duration.between(deadlockSince, now).compareTo(settings.replanAfter()) >= 0) {
+            // give those who resolve deadlocks themselves (dispatch moves idle vehicles away) a chance first
+            deadlockSince = now;
+            resolveDeadlock(cycle);
+        }
         lastDeadlock = cycle;
+    }
+
+    /**
+     * Breaks a deadlock (TRF-16): one vehicle of the cycle backs off into the nearest point that the
+     * others will not need, waits there until they are through, and then drives on to its target. The
+     * one with the shortest way to such a point is chosen. A cycle where none of them can move away,
+     * e.g. two vehicles swapping ends of a dead-end corridor, stays as it is and is reported.
+     */
+    private void resolveDeadlock(Set<String> cycle) {
+        Escape best = null;
+        for (String code : cycle.stream().sorted().toList()) {
+            VehicleTraffic v = vehicles.get(code);
+            if (v == null || v.route == null || !v.route.isStuck()) {
+                continue;
+            }
+            Optional<Escape> escape = escape(v, cycle);
+            if (escape.isPresent() && (best == null || escape.get().seconds() < best.seconds())) {
+                best = escape.get();
+            }
+        }
+        if (best == null) {
+            return;
+        }
+        VehicleTraffic v = best.vehicle();
+        ActiveRoute r = v.route;
+        log.warn("resolving deadlock {}: {} backs off to {} and drives on from there", cycle.stream().sorted().toList(),
+                v.code, best.route().target());
+        int refuge = r.releasedIndex + best.route().lastIndex();
+        r.plan = r.plan.splice(r.releasedIndex, best.route().then(best.onward()));
+        r.clearBlocked();
+        r.corridorWaiting = null;
+        r.holdIndex = refuge;
+        r.holdFor = cycle.stream().filter(c -> !c.equals(v.code)).collect(Collectors.toSet());
+        r.holdNodes = Set.copyOf(best.onward().nodes());
+        try {
+            fleet.extendRoute(v.code, command(r, r.releasedIndex));
+        } catch (RuntimeException e) {
+            log.error("could not send the way out of the deadlock to {}", v.code, e);
+        }
+        extendAndSend(v, r);
+    }
+
+    private record Escape(VehicleTraffic vehicle, PlannedRoute route, PlannedRoute onward) {
+
+        double seconds() {
+            return route.seconds();
+        }
+    }
+
+    /**
+     * The nearest point {@code v} can reach without using what others hold, that is neither held by
+     * nor ahead of the other vehicles in the cycle, with the way there and the way from there on.
+     */
+    private Optional<Escape> escape(VehicleTraffic v, Set<String> cycle) {
+        ActiveRoute r = v.route;
+        RoadGraph graph = graph(r.mapCode);
+        Set<Resource> occupied = occupiedByOthers(v, graph);
+        // it cannot back up through a corridor where others follow it
+        corridorTable(r.mapCode).snapshot().forEach((corridor, holders) -> {
+            if (holders.contains(v.code) && holders.size() > 1) {
+                graph.corridors().stream().filter(c -> c.id().equals(corridor)).findFirst()
+                        .ifPresent(c -> c.paths().forEach(p -> occupied.add(Resource.path(p))));
+            }
+        });
+        Set<String> needed = new HashSet<>();
+        for (String other : cycle) {
+            VehicleTraffic o = vehicles.get(other);
+            if (o != null && o != v && o.route != null) {
+                needed.addAll(o.route.plan.nodes().subList(o.route.passedIndex, o.route.plan.nodes().size()));
+            }
+        }
+        String here = r.plan.nodes().get(r.releasedIndex);
+        // breadth first over the free part of the map, nearest points first
+        List<String> queue = new ArrayList<>(List.of(here));
+        Set<String> seen = new HashSet<>(queue);
+        for (int k = 0; k < queue.size(); k++) {
+            for (RoadGraph.Edge e : graph.outgoing(queue.get(k))) {
+                RoadGraph.Node next = graph.node(e.to()).orElseThrow();
+                if (!seen.add(e.to()) || Resource.of(e).stream().anyMatch(occupied::contains)
+                        || Resource.of(next).stream().anyMatch(occupied::contains)) {
+                    continue;
+                }
+                if (!needed.contains(e.to())) {
+                    Optional<PlannedRoute> away = planner.plan(graph,
+                            new PathPlanner.Request(here, e.to(), settings.defaultSpeed(), occupied, Map.of()));
+                    Optional<PlannedRoute> onward = planner.plan(graph,
+                            PathPlanner.Request.simple(e.to(), r.target(), settings.defaultSpeed()));
+                    if (away.isPresent() && onward.isPresent()) {
+                        return Optional.of(new Escape(v, away.get(), onward.get()));
+                    }
+                }
+                queue.add(e.to());
+            }
+        }
+        return Optional.empty();
     }
 
     // ================================================================== maps
@@ -682,6 +906,10 @@ public final class TrafficController {
 
     private ReservationTable table(String mapCode) {
         return tables.computeIfAbsent(mapCode, k -> new ReservationTable());
+    }
+
+    private CorridorTable corridorTable(String mapCode) {
+        return corridorTables.computeIfAbsent(mapCode, k -> new CorridorTable());
     }
 
     private VehicleTraffic requireVehicle(String code) {

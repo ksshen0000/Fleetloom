@@ -26,6 +26,36 @@ class RoadGraphBuilderTest {
     }
 
     @Test
+    void singleLaneStretchesBetweenJunctionsAreCorridors() {
+        RoadGraph g = RoadGraphBuilder.build(TestMaps.corridorBetweenJunctions());
+
+        assertThat(g.corridors()).singleElement().satisfies(c -> {
+            assertThat(c.id()).isEqualTo("A~D");
+            assertThat(c.nodes()).containsExactly("A", "B", "C", "D");
+            assertThat(c.paths()).containsExactly("AB", "BC", "CD");
+            assertThat(c.direction(g.edge("B", "C").orElseThrow())).isEqualTo(1);
+            assertThat(c.direction(g.edge("D", "C").orElseThrow())).isEqualTo(-1);
+        });
+        // a spur is a single path: holding the path already keeps others out
+        assertThat(g.corridor("W1A")).isEmpty();
+
+        // each corner of a grid is one, the inner points are junctions
+        RoadGraph grid = RoadGraphBuilder.build(TestMaps.grid(3, 3, 4));
+        assertThat(grid.corridors()).extracting(RoadGraph.Corridor::id)
+                .containsExactlyInAnyOrder("P01~P10", "P01~P12", "P10~P21", "P12~P21");
+    }
+
+    @Test
+    void oneWayPathsDoNotFormCorridors() {
+        MapTopologyDto map = new MapTopologyDto("M", 1,
+                List.of(TestMaps.point("A", 0, 0), TestMaps.point("B", 1, 0), TestMaps.point("C", 2, 0)),
+                List.of(TestMaps.path("AB", "A", "B", PathDirection.UNIDIRECTIONAL, 1),
+                        TestMaps.path("BC", "B", "C", PathDirection.BIDIRECTIONAL, 1)), List.of());
+
+        assertThat(RoadGraphBuilder.build(map).corridors()).isEmpty();
+    }
+
+    @Test
     void oneWayPathHasOneEdge() {
         MapTopologyDto map = new MapTopologyDto("M", 1, List.of(TestMaps.point("A", 0, 0), TestMaps.point("B", 1, 0)),
                 List.of(TestMaps.path("AB", "A", "B", PathDirection.UNIDIRECTIONAL, 1)), List.of());

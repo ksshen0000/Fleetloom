@@ -27,6 +27,15 @@ public record PlannedRoute(List<String> nodes, List<RoadGraph.Edge> edges, doubl
         return nodes.size() - 1;
     }
 
+    /** This route followed by {@code next}, which starts where this one ends. */
+    PlannedRoute then(PlannedRoute next) {
+        List<String> n = new java.util.ArrayList<>(nodes);
+        n.addAll(next.nodes.subList(1, next.nodes.size()));
+        List<RoadGraph.Edge> e = new java.util.ArrayList<>(edges);
+        e.addAll(next.edges);
+        return new PlannedRoute(n, e, seconds + next.seconds, length + next.length);
+    }
+
     /** This route up to and including node {@code index}, followed by {@code tail} (which starts at that node). */
     PlannedRoute splice(int index, PlannedRoute tail) {
         List<String> n = new java.util.ArrayList<>(nodes.subList(0, index));
