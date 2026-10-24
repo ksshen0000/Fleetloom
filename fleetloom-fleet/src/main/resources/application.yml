@@ -1,0 +1,23 @@
+server:
+  port: ${FLEETLOOM_FLEET_PORT:8083}
+
+spring:
+  application:
+    name: fleetloom-fleet
+  data:
+    redis:
+      host: ${FLEETLOOM_VALKEY_HOST:localhost}
+      port: ${FLEETLOOM_VALKEY_PORT:6379}
+
+fleetloom:
+  fleet:
+    mqtt:
+      host: ${FLEETLOOM_MQTT_HOST:localhost}
+      port: ${FLEETLOOM_MQTT_PORT:1883}
+    heartbeat-timeout: 5s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

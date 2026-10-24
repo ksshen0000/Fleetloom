@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Runs every RCS3000 service locally from the built jars, for development and demos.
+# Runs every Fleetloom service locally from the built jars, for development and demos.
 #
 #   deploy/dev-stack.sh start              # infrastructure (docker compose), all services and the web UI
-#   deploy/dev-stack.sh restart [name...]  # e.g. after ./mvnw install -pl rcs-fleet -DskipTests: restart fleet
+#   deploy/dev-stack.sh restart [name...]  # e.g. after ./mvnw install -pl fleetloom-fleet -DskipTests: restart fleet
 #   deploy/dev-stack.sh status
 #   deploy/dev-stack.sh stop
 #
 # Logs go to .dev/logs. Build first with ./mvnw install -DskipTests. On a fresh database the demo map
 # and storage data are created (deploy/examples/setup-demo-*.sh). The simulator drives two vehicles
-# on the DEMO map; override with RCS_SIM_ARGS. RCS_NO_WEB=1 skips the web UI dev server.
+# on the DEMO map; override with FLEETLOOM_SIM_ARGS. FLEETLOOM_NO_WEB=1 skips the web UI dev server.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RUN=$ROOT/.dev
@@ -17,14 +17,14 @@ V=0.1.0-SNAPSHOT
 
 # name|port|jar
 SERVICES=(
-  "resource|8081|rcs-resource/target/rcs-resource-$V.jar"
-  "fleet|8083|rcs-fleet/target/rcs-fleet-$V-exec.jar"
-  "traffic|8084|rcs-traffic/target/rcs-traffic-$V-exec.jar"
-  "dispatch|8082|rcs-dispatch/target/rcs-dispatch-$V.jar"
-  "simulator|8090|rcs-simulator/target/rcs-simulator-$V-exec.jar"
-  "gateway|8080|rcs-gateway/target/rcs-gateway-$V.jar"
+  "resource|8081|fleetloom-resource/target/fleetloom-resource-$V.jar"
+  "fleet|8083|fleetloom-fleet/target/fleetloom-fleet-$V-exec.jar"
+  "traffic|8084|fleetloom-traffic/target/fleetloom-traffic-$V-exec.jar"
+  "dispatch|8082|fleetloom-dispatch/target/fleetloom-dispatch-$V.jar"
+  "simulator|8090|fleetloom-simulator/target/fleetloom-simulator-$V-exec.jar"
+  "gateway|8080|fleetloom-gateway/target/fleetloom-gateway-$V.jar"
 )
-SIM_ARGS=${RCS_SIM_ARGS:-"--rcs.simulator.map.code=DEMO --rcs.simulator.vehicles[0].serial-number=AGV-001 --rcs.simulator.vehicles[0].initial-point=P10 --rcs.simulator.vehicles[1].serial-number=AGV-002 --rcs.simulator.vehicles[1].initial-point=P01"}
+SIM_ARGS=${FLEETLOOM_SIM_ARGS:-"--fleetloom.simulator.map.code=DEMO --fleetloom.simulator.vehicles[0].serial-number=AGV-001 --fleetloom.simulator.vehicles[0].initial-point=P10 --fleetloom.simulator.vehicles[1].serial-number=AGV-002 --fleetloom.simulator.vehicles[1].initial-point=P01"}
 
 running() {
   [[ -f $RUN/$1.pid ]] && kill -0 "$(cat "$RUN/$1.pid")" 2>/dev/null
@@ -88,14 +88,14 @@ stop_service() {
 }
 
 start_web() {
-  [[ -n ${RCS_NO_WEB:-} ]] && return 0
+  [[ -n ${FLEETLOOM_NO_WEB:-} ]] && return 0
   if running web; then
     echo "  web already running"
     return 0
   fi
-  [[ -d $ROOT/rcs-web/node_modules ]] || (cd "$ROOT/rcs-web" && corepack pnpm install --frozen-lockfile)
+  [[ -d $ROOT/fleetloom-web/node_modules ]] || (cd "$ROOT/fleetloom-web" && corepack pnpm install --frozen-lockfile)
   # its own session and process group: the dev server starts children, and stop() ends them all
-  setsid nohup corepack pnpm --dir "$ROOT/rcs-web" dev --host 127.0.0.1 >"$RUN/logs/web.log" 2>&1 </dev/null &
+  setsid nohup corepack pnpm --dir "$ROOT/fleetloom-web" dev --host 127.0.0.1 >"$RUN/logs/web.log" 2>&1 </dev/null &
   echo $! >"$RUN/web.pid"
   for _ in $(seq 1 60); do
     curl -sf localhost:5173 >/dev/null 2>&1 && { echo "  web up on 5173"; return 0; }
@@ -121,7 +121,7 @@ start() {
     start_service "$name" "$port" "$jar"
   done
   start_web
-  echo "UI: http://localhost:5173 (admin / RCS_ADMIN_PASSWORD, default admin12345)"
+  echo "UI: http://localhost:5173 (admin / FLEETLOOM_ADMIN_PASSWORD, default admin12345)"
 }
 
 stop() {

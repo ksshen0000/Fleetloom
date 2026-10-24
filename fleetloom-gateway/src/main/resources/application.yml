@@ -1,0 +1,43 @@
+server:
+  port: ${FLEETLOOM_GATEWAY_PORT:8080}
+
+spring:
+  application:
+    name: fleetloom-gateway
+  data:
+    redis:
+      host: ${FLEETLOOM_VALKEY_HOST:localhost}
+      port: ${FLEETLOOM_VALKEY_PORT:6379}
+
+fleetloom:
+  security:
+    # must match fleetloom-resource, which signs the tokens
+    jwt-secret: ${FLEETLOOM_JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+    # login attempts allowed per client address and window, against password guessing
+    login-attempts: 10
+    login-window: 1m
+  gateway:
+    # every /api/<name>/** request goes to services.<name>
+    services:
+      resource: ${FLEETLOOM_RESOURCE_URL:http://localhost:8081}
+      dispatch: ${FLEETLOOM_DISPATCH_URL:http://localhost:8082}
+      fleet: ${FLEETLOOM_FLEET_URL:http://localhost:8083}
+      traffic: ${FLEETLOOM_TRAFFIC_URL:http://localhost:8084}
+      simulator: ${FLEETLOOM_SIMULATOR_URL:http://localhost:8090}
+    push:
+      events:
+        - VehicleStateUpdated
+        - VehicleConnectionChanged
+        - VehicleForgotten
+        - TransportOrderStatusChanged
+        - RouteProgressed
+        - TrafficBlocked
+        - DeadlockDetected
+        - MapPublished
+        - AlarmChanged
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

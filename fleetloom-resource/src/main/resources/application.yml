@@ -1,0 +1,39 @@
+server:
+  port: ${FLEETLOOM_RESOURCE_PORT:8081}
+
+spring:
+  application:
+    name: fleetloom-resource
+  datasource:
+    # stringtype=unspecified lets PostgreSQL cast JSON strings into jsonb columns
+    url: jdbc:postgresql://${FLEETLOOM_DB_HOST:localhost}:${FLEETLOOM_DB_PORT:5432}/${FLEETLOOM_DB_NAME:fleetloom}?currentSchema=resource&stringtype=unspecified
+    username: ${FLEETLOOM_RESOURCE_DB_USER:fleetloom_resource}
+    password: ${FLEETLOOM_RESOURCE_DB_PASSWORD:fleetloom_resource}
+  data:
+    redis:
+      host: ${FLEETLOOM_VALKEY_HOST:localhost}
+      port: ${FLEETLOOM_VALKEY_PORT:6379}
+  flyway:
+    schemas: resource
+    default-schema: resource
+    create-schemas: true
+
+fleetloom:
+  security:
+    # Shared with fleetloom-gateway; at least 32 bytes. The default is for development only.
+    jwt-secret: ${FLEETLOOM_JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+    token-ttl: 12h
+    # Password of user "admin", created when the user table is empty
+    initial-admin-password: ${FLEETLOOM_ADMIN_PASSWORD:admin12345}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

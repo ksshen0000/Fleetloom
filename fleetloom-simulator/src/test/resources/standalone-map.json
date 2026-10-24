@@ -1,0 +1,14 @@
+{
+  "mapId": "HALL1",
+  "version": "7",
+  "points": [
+    {"code": "A", "x": 0, "y": 0, "type": "PARKING"},
+    {"code": "B", "x": 6, "y": 0},
+    {"code": "C", "x": 6, "y": 4, "type": "CHARGING"}
+  ],
+  "paths": [
+    {"code": "A-B", "fromPoint": "A", "toPoint": "B", "direction": "BIDIRECTIONAL"},
+    {"code": "B-C", "fromPoint": "B", "toPoint": "C"}
+  ],
+  "areas": []
+}

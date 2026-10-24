@@ -5,7 +5,7 @@
 #              shelves SH01..SH06 with goods in ST-01..06
 #   the simulated vehicles AGV-001/002
 set -uo pipefail
-API=${RCS_RESOURCE_URL:-http://localhost:8081}/api/resource/v1
+API=${FLEETLOOM_RESOURCE_URL:-http://localhost:8081}/api/resource/v1
 post() { curl -s -o /dev/null -w '%{http_code}' -X POST "$API$1" -H 'Content-Type: application/json' -d "$2"; }
 
 post /zones '{"code":"A","name":"Area A","type":"BUFFER"}' >/dev/null
@@ -45,6 +45,6 @@ done
 
 post /vehicle-types '{"code":"JACK","name":"Jacking AGV","category":"JACKING","length":1.2,"width":0.8,"maxSpeed":1.5,"maxLoad":500,"supportedActions":["pick","drop"]}' >/dev/null
 for v in AGV-001 AGV-002; do
-  post /vehicles "{\"code\":\"$v\",\"name\":\"$v\",\"typeCode\":\"JACK\",\"manufacturer\":\"RCS3000-SIM\",\"serialNumber\":\"$v\",\"simulated\":true}" >/dev/null
+  post /vehicles "{\"code\":\"$v\",\"name\":\"$v\",\"typeCode\":\"JACK\",\"manufacturer\":\"FLEETLOOM-SIM\",\"serialNumber\":\"$v\",\"simulated\":true}" >/dev/null
 done
 curl -s "$API/storage-locations" | python3 -c 'import json,sys; print("locations:", [(l["code"], l["status"], l["carrierCode"]) for l in json.load(sys.stdin)["data"]])'

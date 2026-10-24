@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>org.rcs3000</groupId>
-    <artifactId>rcs3000</artifactId>
+    <groupId>org.fleetloom</groupId>
+    <artifactId>fleetloom</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>RCS3000</name>
+    <name>Fleetloom</name>
     <description>Open-source AGV fleet management and control platform</description>
 
     <licenses>
@@ -27,15 +27,16 @@
     </licenses>
 
     <modules>
-        <module>rcs-common</module>
-        <module>rcs-contracts</module>
-        <module>rcs-resource</module>
-        <module>rcs-protocol-vda5050</module>
-        <module>rcs-simulator</module>
-        <module>rcs-fleet</module>
-        <module>rcs-traffic</module>
-        <module>rcs-dispatch</module>
-        <module>rcs-gateway</module>
+        <module>fleetloom-common</module>
+        <module>fleetloom-contracts</module>
+        <module>fleetloom-resource</module>
+        <module>fleetloom-protocol-vda5050</module>
+        <module>fleetloom-simulator-core</module>
+        <module>fleetloom-simulator</module>
+        <module>fleetloom-fleet</module>
+        <module>fleetloom-traffic</module>
+        <module>fleetloom-dispatch</module>
+        <module>fleetloom-gateway</module>
     </modules>
 
     <properties>
@@ -60,18 +61,23 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.rcs3000</groupId>
-                <artifactId>rcs-common</artifactId>
+                <groupId>org.fleetloom</groupId>
+                <artifactId>fleetloom-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.rcs3000</groupId>
-                <artifactId>rcs-contracts</artifactId>
+                <groupId>org.fleetloom</groupId>
+                <artifactId>fleetloom-contracts</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.rcs3000</groupId>
-                <artifactId>rcs-protocol-vda5050</artifactId>
+                <groupId>org.fleetloom</groupId>
+                <artifactId>fleetloom-protocol-vda5050</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.fleetloom</groupId>
+                <artifactId>fleetloom-simulator-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

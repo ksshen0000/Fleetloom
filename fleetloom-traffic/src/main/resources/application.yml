@@ -1,0 +1,24 @@
+server:
+  port: ${FLEETLOOM_TRAFFIC_PORT:8084}
+
+spring:
+  application:
+    name: fleetloom-traffic
+  data:
+    redis:
+      host: ${FLEETLOOM_VALKEY_HOST:localhost}
+      port: ${FLEETLOOM_VALKEY_PORT:6379}
+
+fleetloom:
+  traffic:
+    fleet-url: ${FLEETLOOM_FLEET_URL:http://localhost:8083}
+    resource-url: ${FLEETLOOM_RESOURCE_URL:http://localhost:8081}
+    lookahead-nodes: 3
+    lookahead-distance: 5.0
+    replan-after: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

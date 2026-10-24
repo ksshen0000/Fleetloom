@@ -1,4 +1,4 @@
-# RCS3000 技术评估
+# Fleetloom 技术评估
 
 > 版本：v0.3（草稿） · 日期：2026-10-18
 > 对应需求：[requirements.md](requirements.md) v0.2
@@ -8,7 +8,7 @@
 
 ## 0. 硬约束：纯开源、非盈利交付
 
-RCS3000 本身作为**开源项目**发布，非盈利；客户（多为企业）自行下载或由我们协助部署。因此：
+Fleetloom 本身作为**开源项目**发布，非盈利；客户（多为企业）自行下载或由我们协助部署。因此：
 
 1. **平台代码以 Apache-2.0 开源**（理由见 0.1）。
 2. **所有运行时组件和依赖必须是 OSI 认可的开源许可，且对下游的商业使用者也免费**。我们非盈利，但使用者（工厂、仓库）是商业主体，所以「非商用免费」「非营利组织免费」的授权不算数。
@@ -89,7 +89,7 @@ RCS3000 本身作为**开源项目**发布，非盈利；客户（多为企业�
 
 | 风险 | 对策 |
 | --- | --- |
-| 模块边界在代码里被悄悄打破 | 服务间只依赖 `rcs-contracts`；ArchUnit 测试禁止跨服务包引用、禁止 `domain` 层依赖 Spring |
+| 模块边界在代码里被悄悄打破 | 服务间只依赖 `fleetloom-contracts`；ArchUnit 测试禁止跨服务包引用、禁止 `domain` 层依赖 Spring |
 | traffic 有状态、只能单实例 | 明确 traffic 为单实例服务；预约表周期快照到 Valkey；重启时由车辆当前位置重建；重启窗口内车辆停在已持有资源末端（安全侧失效） |
 | 跨服务一致性（锁库位 + 派车 + 更新载具） | dispatch 作为订单的唯一协调者，每一步落库后再进行下一步；失败时按订单补偿（释放锁、取消路由） |
 | 事件丢失或重复 | Streams 消费者组 + ACK；消费者按 `eventId` 幂等 |
@@ -128,7 +128,7 @@ RCS3000 本身作为**开源项目**发布，非盈利；客户（多为企业�
 
 ### 4.3 服务间同步调用
 
-Spring Framework 自带声明式 HTTP 客户端（`@HttpExchange` + `RestClient`），Boot 4 提供自动配置；OpenFeign 已进入维护模式。结论：**`@HttpExchange`**，接口定义放在 `rcs-contracts`。
+Spring Framework 自带声明式 HTTP 客户端（`@HttpExchange` + `RestClient`），Boot 4 提供自动配置；OpenFeign 已进入维护模式。结论：**`@HttpExchange`**，接口定义放在 `fleetloom-contracts`。
 
 ### 4.4 并发模型
 
@@ -196,7 +196,7 @@ Spring Framework 自带声明式 HTTP 客户端（`@HttpExchange` + `RestClient`
 | RabbitMQ | MPL-2.0 | 开源，但多一个组件 |
 | NATS JetStream | Apache-2.0 | 轻量；团队熟悉度低 |
 
-结论：**Valkey Streams**，业务代码只依赖 `rcs-common` 的 `EventBus` 接口。
+结论：**Valkey Streams**，业务代码只依赖 `fleetloom-common` 的 `EventBus` 接口。
 
 ### 6.2 MQTT Broker
 
@@ -212,7 +212,7 @@ Spring Framework 自带声明式 HTTP 客户端（`@HttpExchange` + `RestClient`
 
 结论：**Mosquitto**；平台只使用标准 MQTT v5 能力，换 BifroMQ 不改代码。
 
-MQTT 客户端：**HiveMQ MQTT Client**（Apache-2.0），封装在 `rcs-protocol-vda5050` 中，fleet 与 simulator 共用。
+MQTT 客户端：**HiveMQ MQTT Client**（Apache-2.0），封装在 `fleetloom-protocol-vda5050` 中，fleet 与 simulator 共用。
 
 ### 6.3 前端实时推送
 
@@ -239,7 +239,7 @@ v1 用 Docker Compose 服务名 + `application.yml` + 环境变量。需要动�
 | Sa-Token | Apache-2.0 | 与 Spring Cloud Gateway 结合需额外适配 |
 | Keycloak | Apache-2.0 | 客户要求 SSO / LDAP 时引入 |
 
-结论：**Spring Security + JWT**（JWT 库 Nimbus JOSE + JWT，Apache-2.0）。用户、角色、权限在 `rcs-resource/system`，resource 签发 JWT，网关统一校验，接口权限用 `@PreAuthorize`；上游系统用 API Key。
+结论：**Spring Security + JWT**（JWT 库 Nimbus JOSE + JWT，Apache-2.0）。用户、角色、权限在 `fleetloom-resource/system`，resource 签发 JWT，网关统一校验，接口权限用 `@PreAuthorize`；上游系统用 API Key。
 
 ---
 
@@ -251,7 +251,7 @@ v1 用 Docker Compose 服务名 + `application.yml` + 环境变量。需要动�
 | JGraphT | EPL-2.0 / LGPL-2.1 双许可；**只在 test 作用域**作为「标准答案」对照，不进交付物 |
 | openTCS | MIT；仅作设计参考 |
 
-结论：**自研**，放在 `rcs-traffic/core`，纯 Java、无 Spring 依赖。
+结论：**自研**，放在 `fleetloom-traffic/core`，纯 Java、无 Spring 依赖。
 
 ---
 
@@ -259,7 +259,7 @@ v1 用 Docker Compose 服务名 + `application.yml` + 环境变量。需要动�
 
 | 候选 | 评估 |
 | --- | --- |
-| **Java（Spring Boot）** | 复用 `rcs-protocol-vda5050`，协议实现只有一份 |
+| **Java（Spring Boot）** | 复用 `fleetloom-protocol-vda5050`，协议实现只有一份 |
 | Python | 要再维护一份 VDA 5050 模型，易与平台不一致 |
 | 现成开源 VDA 5050 模拟器 | 用于协议兼容性交叉测试，不进交付物 |
 
@@ -391,7 +391,7 @@ v1 用 Docker Compose 服务名 + `application.yml` + 环境变量。需要动�
 | 演示环境 | `docker compose up` 即可得到「平台 + 模拟器 + 示例地图 + 示例订单」的完整演示，降低试用门槛 |
 | 文档 | `docs/` 下的需求、设计、接口文档随代码一起开源；部署和二次开发文档优先 |
 | 扩展点 | 车辆适配器（`VehicleAdapter`）、路径规划器（`PathPlanner`）、选车策略（`VehicleSelector`）作为公开 SPI，便于社区贡献新车型协议和算法 |
-| 商标 | 项目名「RCS3000」使用前检索是否与已有商标冲突 |
+| 商标 | 项目名「Fleetloom」使用前检索是否与已有商标冲突 |
 
 ---
 

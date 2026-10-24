@@ -1,22 +1,22 @@
-# Development infrastructure for RCS3000.
+# Development infrastructure for Fleetloom.
 #   docker compose -f deploy/docker-compose.yml up -d
 # Credentials here are for local development only.
-name: rcs3000
+name: fleetloom
 
 services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_DB: rcs
-      POSTGRES_USER: rcs_admin
-      POSTGRES_PASSWORD: rcs_admin
+      POSTGRES_DB: fleetloom
+      POSTGRES_USER: fleetloom_admin
+      POSTGRES_PASSWORD: fleetloom_admin
     ports:
       - "5432:5432"
     volumes:
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
       - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rcs_admin -d rcs"]
+      test: ["CMD-SHELL", "pg_isready -U fleetloom_admin -d fleetloom"]
       interval: 5s
       retries: 10
 

@@ -1,0 +1,40 @@
+server:
+  port: ${FLEETLOOM_DISPATCH_PORT:8082}
+
+spring:
+  application:
+    name: fleetloom-dispatch
+  datasource:
+    url: jdbc:postgresql://${FLEETLOOM_DB_HOST:localhost}:${FLEETLOOM_DB_PORT:5432}/${FLEETLOOM_DB_NAME:fleetloom}?currentSchema=dispatch&stringtype=unspecified
+    username: ${FLEETLOOM_DISPATCH_DB_USER:fleetloom_dispatch}
+    password: ${FLEETLOOM_DISPATCH_DB_PASSWORD:fleetloom_dispatch}
+  flyway:
+    schemas: dispatch
+    default-schema: dispatch
+    create-schemas: true
+  data:
+    redis:
+      host: ${FLEETLOOM_VALKEY_HOST:localhost}
+      port: ${FLEETLOOM_VALKEY_PORT:6379}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+fleetloom:
+  dispatch:
+    resource-url: ${FLEETLOOM_RESOURCE_URL:http://localhost:8081}
+    traffic-url: ${FLEETLOOM_TRAFFIC_URL:http://localhost:8084}
+    fleet-url: ${FLEETLOOM_FLEET_URL:http://localhost:8083}
+    # order status callbacks to the upstream system (DSP-11); empty URL = off
+    callback:
+      url: ${FLEETLOOM_ORDER_CALLBACK_URL:}
+      secret: ${FLEETLOOM_ORDER_CALLBACK_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

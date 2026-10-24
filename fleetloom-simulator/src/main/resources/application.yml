@@ -1,0 +1,36 @@
+server:
+  port: ${FLEETLOOM_SIMULATOR_PORT:8090}
+
+spring:
+  application:
+    name: fleetloom-simulator
+
+fleetloom:
+  simulator:
+    mqtt:
+      host: ${FLEETLOOM_MQTT_HOST:localhost}
+      port: ${FLEETLOOM_MQTT_PORT:1883}
+    map:
+      # JSON file with points and paths, for use without Fleetloom (see FileMapSource)
+      file: ${FLEETLOOM_SIM_MAP_FILE:}
+      # Map id; without a file, the map to load from Fleetloom. Neither: run without a map (orders then
+      # need node positions)
+      code: ${FLEETLOOM_SIM_MAP:}
+    # Working together with Fleetloom: map service, scenarios, restoring vehicles after a restart.
+    # Set enabled to false to use the simulator with another VDA 5050 fleet manager.
+    platform:
+      enabled: ${FLEETLOOM_SIM_PLATFORM:true}
+      resource-url: ${FLEETLOOM_RESOURCE_URL:http://localhost:8081}
+      dispatch-url: ${FLEETLOOM_DISPATCH_URL:http://localhost:8082}
+      fleet-url: ${FLEETLOOM_FLEET_URL:http://localhost:8083}
+    # Vehicles started with the simulator. Place them on a map point or at x/y.
+    vehicles:
+      - serial-number: AGV-001
+        x: 0
+        y: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

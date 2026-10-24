@@ -1,4 +1,4 @@
-# RCS3000 AGV 管理控制平台 需求文档
+# Fleetloom AGV 管理控制平台 需求文档
 
 > 版本：v0.2（草稿） · 日期：2026-10-18
 > 说明：本文档是后续实现的依据。需求条目带编号（如 `MAP-01`），实现、提交和测试用例都引用编号。修改需求时同步改版本号并在文末「变更记录」登记。
@@ -7,7 +7,7 @@
 
 ## 1. 项目概述
 
-RCS3000 是面向仓储/产线场景的多 AGV 管理控制平台（Robot Control System）。后端 Java、前端 Vue，按业务领域拆分为独立服务；第一阶段用 AGV 模拟器替代真车完成端到端联调，未来真车通过同一套协议接入，平台代码不需要区分真车与模拟车。
+Fleetloom 是面向仓储/产线场景的多 AGV 管理控制平台（Robot Control System）。后端 Java、前端 Vue，按业务领域拆分为独立服务；第一阶段用 AGV 模拟器替代真车完成端到端联调，未来真车通过同一套协议接入，平台代码不需要区分真车与模拟车。
 
 ### 1.1 目标
 
@@ -61,35 +61,35 @@ RCS3000 是面向仓储/产线场景的多 AGV 管理控制平台（Robot Contro
 
 | 服务 | 模块名 | 职责 | 数据所有权 |
 | --- | --- | --- | --- |
-| API 网关 | `rcs-gateway` | 统一入口、鉴权（JWT）、路由、WebSocket 转发、限流 | 无 |
-| 基础资源服务 | `rcs-resource` | 地图、库区库位、载具货物、车型与车辆档案、用户权限、系统配置 | 地图、存储对象、搬运对象、车辆档案、用户 |
-| 任务调度服务 | `rcs-dispatch` | 接收搬运订单、分解任务、选车派车、充电/停靠策略、任务状态机、上游回调 | 订单、任务 |
-| 路径规划与交通管制服务 | `rcs-traffic` | 路径搜索、资源预约与释放、互斥区、死锁检测与解除 | 运行时预约表（内存 + Redis 快照） |
-| 机器人控制服务 | `rcs-fleet` | 车辆连接管理、协议适配（VDA 5050 等）、指令下发、状态采集、心跳与离线判定 | 车辆实时状态（Redis） |
-| AGV 模拟器 | `rcs-simulator` | 模拟多台 AGV 的运动、动作、电量、故障，通过 VDA 5050 与 `rcs-fleet` 通信 | 模拟场景配置 |
-| Web 控制台 | `rcs-web` | Vue 前端 | 无 |
+| API 网关 | `fleetloom-gateway` | 统一入口、鉴权（JWT）、路由、WebSocket 转发、限流 | 无 |
+| 基础资源服务 | `fleetloom-resource` | 地图、库区库位、载具货物、车型与车辆档案、用户权限、系统配置 | 地图、存储对象、搬运对象、车辆档案、用户 |
+| 任务调度服务 | `fleetloom-dispatch` | 接收搬运订单、分解任务、选车派车、充电/停靠策略、任务状态机、上游回调 | 订单、任务 |
+| 路径规划与交通管制服务 | `fleetloom-traffic` | 路径搜索、资源预约与释放、互斥区、死锁检测与解除 | 运行时预约表（内存 + Redis 快照） |
+| 机器人控制服务 | `fleetloom-fleet` | 车辆连接管理、协议适配（VDA 5050 等）、指令下发、状态采集、心跳与离线判定 | 车辆实时状态（Redis） |
+| AGV 模拟器 | `fleetloom-simulator` | 模拟多台 AGV 的运动、动作、电量、故障，通过 VDA 5050 与 `fleetloom-fleet` 通信 | 模拟场景配置 |
+| Web 控制台 | `fleetloom-web` | Vue 前端 | 无 |
 
 说明：
-- 用户要求「基础管理作为一个服务」，所以地图、存储对象、搬运对象、车辆档案合在 `rcs-resource`，内部按包分模块（`map` / `storage` / `carrier` / `vehicle` / `system`），边界清晰，日后可按包直接拆出独立服务（最可能先拆的是 `map`）。
-- 车辆的**档案**（静态配置）归 `rcs-resource`，车辆的**实时状态**归 `rcs-fleet`，两者通过车辆编码关联。
-- `rcs-simulator` 不依赖平台任何内部代码，只共享协议模块 `rcs-protocol-vda5050`，确保它和真车处在同一位置。
+- 用户要求「基础管理作为一个服务」，所以地图、存储对象、搬运对象、车辆档案合在 `fleetloom-resource`，内部按包分模块（`map` / `storage` / `carrier` / `vehicle` / `system`），边界清晰，日后可按包直接拆出独立服务（最可能先拆的是 `map`）。
+- 车辆的**档案**（静态配置）归 `fleetloom-resource`，车辆的**实时状态**归 `fleetloom-fleet`，两者通过车辆编码关联。
+- `fleetloom-simulator` 不依赖平台任何内部代码，只共享协议模块 `fleetloom-protocol-vda5050`，确保它和真车处在同一位置。
 
 ### 3.2 架构图
 
 ```mermaid
 flowchart TB
     subgraph Client
-        WEB[rcs-web<br/>Vue 3 控制台]
+        WEB[fleetloom-web<br/>Vue 3 控制台]
         UP[上游系统<br/>WMS / MES]
     end
 
-    GW[rcs-gateway<br/>鉴权 / 路由 / WebSocket]
+    GW[fleetloom-gateway<br/>鉴权 / 路由 / WebSocket]
 
     subgraph Core[平台服务]
-        RES[rcs-resource<br/>地图 · 库位 · 载具 · 车辆档案 · 用户]
-        DSP[rcs-dispatch<br/>订单 · 任务 · 选车 · 充电停靠]
-        TRF[rcs-traffic<br/>路径规划 · 交通管制 · 死锁]
-        FLT[rcs-fleet<br/>协议适配 · 指令下发 · 状态采集]
+        RES[fleetloom-resource<br/>地图 · 库位 · 载具 · 车辆档案 · 用户]
+        DSP[fleetloom-dispatch<br/>订单 · 任务 · 选车 · 充电停靠]
+        TRF[fleetloom-traffic<br/>路径规划 · 交通管制 · 死锁]
+        FLT[fleetloom-fleet<br/>协议适配 · 指令下发 · 状态采集]
     end
 
     subgraph Infra[基础设施]
@@ -99,7 +99,7 @@ flowchart TB
     end
 
     subgraph Vehicles[车辆侧]
-        SIM[rcs-simulator<br/>N 台虚拟 AGV]
+        SIM[fleetloom-simulator<br/>N 台虚拟 AGV]
         REAL[真实 AGV<br/>未来接入]
     end
 
@@ -122,8 +122,8 @@ flowchart TB
 | 前端 → 后端 | HTTP REST（JSON） | 经网关，统一前缀 `/api/{service}/v1/...` |
 | 后端 → 前端实时推送 | WebSocket（JSON 消息） | 由网关推送模块承载，车辆位置、任务状态、告警；推送频率 ≤ 5 Hz/车 |
 | 服务间同步查询 | HTTP（Spring `@HttpExchange` 接口） | 例：dispatch 查询库位详情 |
-| 服务间异步事件 | Redis Streams（Valkey，消费者组） | 通过 `rcs-common` 的 `EventBus` 接口封装，以后可替换为 Kafka / RabbitMQ |
-| 平台 ↔ 车辆 | MQTT（VDA 5050 v2.0） | 由 `rcs-fleet` 独占，其他服务不直接接触车辆协议 |
+| 服务间异步事件 | Redis Streams（Valkey，消费者组） | 通过 `fleetloom-common` 的 `EventBus` 接口封装，以后可替换为 Kafka / RabbitMQ |
+| 平台 ↔ 车辆 | MQTT（VDA 5050 v2.0） | 由 `fleetloom-fleet` 独占，其他服务不直接接触车辆协议 |
 
 ### 3.4 核心事件
 
@@ -143,10 +143,10 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant U as 上游/控制台
-    participant D as rcs-dispatch
-    participant R as rcs-resource
-    participant T as rcs-traffic
-    participant F as rcs-fleet
+    participant D as fleetloom-dispatch
+    participant R as fleetloom-resource
+    participant T as fleetloom-traffic
+    participant F as fleetloom-fleet
     participant V as AGV/模拟器
 
     U->>D: 创建搬运订单(载具X, A→B)
@@ -174,7 +174,7 @@ sequenceDiagram
 
 ---
 
-## 4. 基础资源服务：地图管理（`rcs-resource/map`）
+## 4. 基础资源服务：地图管理（`fleetloom-resource/map`）
 
 ### 4.1 数据模型
 
@@ -206,7 +206,7 @@ sequenceDiagram
 
 ---
 
-## 5. 基础资源服务：存储对象管理（`rcs-resource/storage`）
+## 5. 基础资源服务：存储对象管理（`fleetloom-resource/storage`）
 
 ### 5.1 数据模型
 
@@ -233,7 +233,7 @@ sequenceDiagram
 
 ---
 
-## 6. 基础资源服务：搬运对象管理（`rcs-resource/carrier`）
+## 6. 基础资源服务：搬运对象管理（`fleetloom-resource/carrier`）
 
 ### 6.1 数据模型
 
@@ -258,7 +258,7 @@ sequenceDiagram
 
 ## 7. 车辆管理
 
-车辆管理横跨两个服务：**档案**在 `rcs-resource/vehicle`，**实时状态与控制**在 `rcs-fleet`。前端「车辆」页面同时调两边。
+车辆管理横跨两个服务：**档案**在 `fleetloom-resource/vehicle`，**实时状态与控制**在 `fleetloom-fleet`。前端「车辆」页面同时调两边。
 
 ### 7.1 数据模型
 
@@ -284,7 +284,7 @@ sequenceDiagram
 
 ---
 
-## 8. 任务调度服务（`rcs-dispatch`）
+## 8. 任务调度服务（`fleetloom-dispatch`）
 
 ### 8.1 数据模型
 
@@ -334,7 +334,7 @@ stateDiagram-v2
 
 ---
 
-## 9. 路径规划与交通管制服务（`rcs-traffic`）
+## 9. 路径规划与交通管制服务（`fleetloom-traffic`）
 
 这是系统最核心、算法最集中的服务。设计成**单实例有状态服务**：预约表在内存里，定期快照到 Redis，重启时从快照 + 车辆当前位置恢复。
 
@@ -375,7 +375,7 @@ stateDiagram-v2
 
 ---
 
-## 10. 机器人控制服务（`rcs-fleet`）
+## 10. 机器人控制服务（`fleetloom-fleet`）
 
 ### 10.1 设计要点
 
@@ -398,7 +398,7 @@ stateDiagram-v2
 
 ---
 
-## 11. AGV 模拟器（`rcs-simulator`）
+## 11. AGV 模拟器（`fleetloom-simulator`）
 
 独立 Spring Boot 应用，一个进程可模拟多台车。它对平台而言就是「一批真车」：只通过 MQTT 交互，不访问平台数据库。
 
@@ -414,12 +414,12 @@ stateDiagram-v2
 | SIM-08 | instantActions：暂停/恢复/取消订单/初始化位置 | P0 |
 | SIM-09 | 故障注入（REST）：上报指定错误、模拟断线、模拟定位丢失、模拟障碍物停车 N 秒 | P1 |
 | SIM-10 | 时间倍率：1x ~ 10x 加速，便于压测调度 | P1 |
-| SIM-11 | 简易管理页面或在 `rcs-web` 中提供「模拟器」页签：批量创建/删除虚拟车、注入故障 | P1 |
+| SIM-11 | 简易管理页面或在 `fleetloom-web` 中提供「模拟器」页签：批量创建/删除虚拟车、注入故障 | P1 |
 | SIM-12 | 场景脚本：一份 YAML 描述车辆 + 定时下发的订单，用于回归测试与性能测试 | P2 |
 
 ---
 
-## 12. Web 控制台（`rcs-web`）
+## 12. Web 控制台（`fleetloom-web`）
 
 ### 12.1 页面
 
@@ -473,31 +473,31 @@ stateDiagram-v2
 ### 14.2 工程结构（单仓库 monorepo）
 
 ```
-RCS3000/
+Fleetloom/
 ├── docs/                          # 需求、设计、接口文档
 ├── pom.xml                        # 父 POM，统一依赖版本
-├── rcs-common/                    # 公共：统一响应、异常、EventBus 接口、工具类
-├── rcs-contracts/                 # 服务间契约：@HttpExchange 接口、DTO、事件定义
-├── rcs-protocol-vda5050/          # VDA 5050 报文模型与 MQTT 编解码（fleet 与 simulator 共用）
-├── rcs-gateway/
-├── rcs-resource/
+├── fleetloom-common/                    # 公共：统一响应、异常、EventBus 接口、工具类
+├── fleetloom-contracts/                 # 服务间契约：@HttpExchange 接口、DTO、事件定义
+├── fleetloom-protocol-vda5050/          # VDA 5050 报文模型与 MQTT 编解码（fleet 与 simulator 共用）
+├── fleetloom-gateway/
+├── fleetloom-resource/
 │   └── src/main/java/.../resource/
 │       ├── map/                   # 地图
 │       ├── storage/               # 库区库位
 │       ├── carrier/               # 载具货物
 │       ├── vehicle/               # 车型、车辆档案
 │       └── system/                # 用户、角色、配置
-├── rcs-dispatch/
-├── rcs-traffic/
+├── fleetloom-dispatch/
+├── fleetloom-traffic/
 │   └── src/main/java/.../traffic/
 │       ├── core/                  # 纯算法：图、A*、预约表、死锁检测（无 Spring 依赖）
 │       └── app/                   # Spring 适配：事件监听、API、快照
-├── rcs-fleet/
+├── fleetloom-fleet/
 │   └── src/main/java/.../fleet/
 │       ├── adapter/               # VehicleAdapter SPI
 │       └── vda5050/               # VDA 5050 适配器实现
-├── rcs-simulator/
-├── rcs-web/                       # Vue 前端
+├── fleetloom-simulator/
+├── fleetloom-web/                       # Vue 前端
 └── deploy/
     └── docker-compose.yml         # PostgreSQL、Valkey、Mosquitto、全部服务
 ```
@@ -519,9 +519,9 @@ RCS3000/
 | --- | --- | --- |
 | M0 工程骨架 | Maven 多模块、Docker Compose 基础设施、网关 + 登录、前端框架 | `docker compose up` 后可登录空白控制台 |
 | M1 基础资源 | 地图编辑器与发布、库区库位、载具、车型车辆档案 | 能画出一张 50 点地图并发布，绑定库位，录入载具 |
-| M2 车辆接入 | `rcs-protocol-vda5050`、`rcs-fleet`、`rcs-simulator` 基础运动 | 控制台给 1 台模拟车手动下发点到点（暂不经 traffic），监控页看到车在动 |
-| M3 规划与管制 | `rcs-traffic`：A*、资源预约、逐段下发 | 3 台模拟车同时手动移动，交叉路口不冲突 |
-| M4 任务调度 | `rcs-dispatch`：订单、模板、选车、库位与载具联动 | 下单「A 搬到 B」全自动完成，库位与载具状态正确 |
+| M2 车辆接入 | `fleetloom-protocol-vda5050`、`fleetloom-fleet`、`fleetloom-simulator` 基础运动 | 控制台给 1 台模拟车手动下发点到点（暂不经 traffic），监控页看到车在动 |
+| M3 规划与管制 | `fleetloom-traffic`：A*、资源预约、逐段下发 | 3 台模拟车同时手动移动，交叉路口不冲突 |
+| M4 任务调度 | `fleetloom-dispatch`：订单、模板、选车、库位与载具联动 | 下单「A 搬到 B」全自动完成，库位与载具状态正确 |
 | M5 运营能力 | 自动充电、停靠、死锁检测与解除、告警、故障注入 | 20 台模拟车连续运行 2 小时、每小时 500 单，无死锁卡死 |
 | M6 加固 | 性能压测、恢复测试、审计、统计看板、文档 | 达到 NFR-01 ~ NFR-03 |
 

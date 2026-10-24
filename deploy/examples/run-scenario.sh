@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Runs a scenario (SIM-12) on the simulator and prints its progress until it ends.
 #   deploy/examples/run-scenario.sh [scenario.yaml]     default: scenario-demo.yaml next to this script
-# Needs the dev stack (deploy/dev-stack.sh start). RCS_SIMULATOR_URL overrides http://localhost:8090.
+# Needs the dev stack (deploy/dev-stack.sh start). FLEETLOOM_SIMULATOR_URL overrides http://localhost:8090.
 set -euo pipefail
 FILE=${1:-$(dirname "$0")/scenario-demo.yaml}
-API=${RCS_SIMULATOR_URL:-http://localhost:8090}/api/simulator/v1/scenarios
+API=${FLEETLOOM_SIMULATOR_URL:-http://localhost:8090}/api/simulator/v1/scenarios
 show() {
   python3 -c '
 import json, sys

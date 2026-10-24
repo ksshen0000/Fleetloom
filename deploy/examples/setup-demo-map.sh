@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates and publishes the demo map DEMO (a new version if it exists already). Needs rcs-resource on
+# Creates and publishes the demo map DEMO (a new version if it exists already). Needs fleetloom-resource on
 # localhost:8081. Two parts:
 #   - a 3x3 grid of points 4 m apart (P00..P22), all paths both ways, charging point CH1 left of P00
 #   - east of it a small warehouse with one-way aisles: a loop (WS* eastbound on y=0, WE* north,
@@ -9,7 +9,7 @@
 #     It is entered from P02 and left towards P22.
 set -euo pipefail
 cd "$(dirname "$0")"
-API=${RCS_RESOURCE_URL:-http://localhost:8081}/api/resource/v1/maps
+API=${FLEETLOOM_RESOURCE_URL:-http://localhost:8081}/api/resource/v1/maps
 
 curl -sf -X POST "$API" -H 'Content-Type: application/json' -d '{"code":"DEMO","name":"Demo grid"}' >/dev/null \
   || echo "map DEMO exists already"

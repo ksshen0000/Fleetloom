@@ -1,5 +1,5 @@
 # Only the built jars and the web build go into images
 **
-!rcs-*/target/*.jar
-!rcs-web/dist/**
+!fleetloom-*/target/*.jar
+!fleetloom-web/dist/**
 !deploy/docker/**
