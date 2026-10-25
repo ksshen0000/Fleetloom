@@ -19,10 +19,12 @@ public record TrafficProperties(
         @DefaultValue("30.0") double occupiedPenalty,
         @DefaultValue("0.1") double nodeTolerance,
         @DefaultValue("5s") Duration blockedEventAfter,
-        @DefaultValue("10s") Duration replanAfter) {
+        @DefaultValue("10s") Duration replanAfter,
+        @DefaultValue("" + TrafficSettings.DEFAULT_COUNTERFLOW_PENALTY) double counterflowPenalty,
+        @DefaultValue("" + TrafficSettings.DEFAULT_FOLLOW_PENALTY) double followPenalty) {
 
     public TrafficSettings toSettings() {
         return new TrafficSettings(lookaheadNodes, lookaheadDistance, turnPenaltyPerRadian, defaultSpeed,
-                occupiedPenalty, nodeTolerance, blockedEventAfter, replanAfter);
+                occupiedPenalty, nodeTolerance, blockedEventAfter, replanAfter, counterflowPenalty, followPenalty);
     }
 }

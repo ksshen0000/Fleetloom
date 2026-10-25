@@ -53,9 +53,12 @@ public record Scenario(String name, Double timeScale, String maxDuration, List<V
         orders = orders == null ? List.of() : List.copyOf(orders);
     }
 
-    /** @param registerAs vehicle type to register the vehicle with in fleetloom-resource, so dispatch uses it */
+    /**
+     * @param registerAs vehicle type to register the vehicle with in fleetloom-resource, so dispatch uses it
+     * @param maxSpeed   m/s; when absent that of its registered type
+     */
     public record VehicleSpec(String serialNumber, String initialPoint, Double x, Double y, Double battery,
-            String registerAs) {
+            String registerAs, Double maxSpeed) {
     }
 
     /**

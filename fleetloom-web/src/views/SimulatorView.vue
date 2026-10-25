@@ -63,7 +63,9 @@ const planned = computed(() => planVehicles(addDialog.prefix.trim() || 'SIM', ad
   addDialog.battery))
 
 async function addVehicles() {
-  const batch = planned.value
+  // a registered vehicle drives at the top speed of its type
+  const type = addDialog.register ? types.value.find((t) => t.code === addDialog.typeCode) : undefined
+  const batch = planned.value.map((v) => ({ ...v, maxSpeed: type?.maxSpeed }))
   if (!(await act(() => simulatorApi.add(batch), `已创建 ${batch.length} 台虚拟车`))) return
   if (addDialog.register && addDialog.typeCode) {
     // vehicles are only dispatched once they are in the vehicle registry

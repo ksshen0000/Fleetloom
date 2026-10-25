@@ -1,6 +1,9 @@
 package org.fleetloom.traffic.infra;
 
 import java.time.Clock;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.fleetloom.common.event.EventBus;
 import org.fleetloom.common.event.valkey.ValkeyEventBus;
@@ -13,6 +16,7 @@ import org.fleetloom.traffic.core.AStarPlanner;
 import org.fleetloom.traffic.core.FleetGateway;
 import org.fleetloom.traffic.core.MapProvider;
 import org.fleetloom.traffic.core.TrafficController;
+import org.fleetloom.traffic.core.VehicleRegistry;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -62,11 +66,28 @@ public class TrafficConfiguration {
         return mapCode -> api.activeTopology(mapCode).data();
     }
 
+    @Bean
+    VehicleRegistry vehicleRegistry(RestClient.Builder builder, TrafficProperties properties) {
+        ResourceHttpApi api = client(builder, properties.resourceUrl(), ResourceHttpApi.class);
+        return () -> {
+            Map<String, Double> speeds = api.vehicleTypes().data().stream()
+                    .collect(Collectors.toMap(ResourceHttpApi.VehicleType::code, ResourceHttpApi.VehicleType::maxSpeed));
+            Map<String, VehicleRegistry.VehicleKind> kinds = new HashMap<>();
+            for (ResourceHttpApi.Vehicle v : api.vehicles().data()) {
+                Double speed = speeds.get(v.typeCode());
+                if (speed != null && speed > 0) {
+                    kinds.put(v.manufacturer() + "/" + v.serialNumber(), new VehicleRegistry.VehicleKind(v.typeCode(), speed));
+                }
+            }
+            return kinds;
+        };
+    }
+
     @Bean(destroyMethod = "close")
-    TrafficEngine trafficEngine(FleetGateway fleet, MapProvider maps, EventBus events, TrafficProperties properties,
-            Clock clock) {
+    TrafficEngine trafficEngine(FleetGateway fleet, MapProvider maps, VehicleRegistry registry, EventBus events,
+            TrafficProperties properties, Clock clock) {
         return new TrafficEngine(new TrafficController(new AStarPlanner(properties.turnPenaltyPerRadian()), fleet, maps,
-                events, properties.toSettings(), clock));
+                registry, events, properties.toSettings(), clock));
     }
 
     @Bean

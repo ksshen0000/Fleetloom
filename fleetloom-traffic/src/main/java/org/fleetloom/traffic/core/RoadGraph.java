@@ -1,13 +1,16 @@
 package org.fleetloom.traffic.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -25,16 +28,32 @@ public final class RoadGraph {
     private final int version;
     private final Map<String, Node> nodes;
     private final Map<String, List<Edge>> outgoing;
-    private final double minWeight;
     private final Map<String, Corridor> corridorByPath;
+    private final Map<String, Integer> index = new HashMap<>();
+    private final List<List<Edge>> incoming = new ArrayList<>();
+    /** goal → {@link #weightedDistance} of every node, by index; the most recently used goals only */
+    private final Map<String, double[]> distancesTo = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, double[]> eldest) {
+            return size() > DISTANCE_CACHE_GOALS;
+        }
+    };
+
+    private static final int DISTANCE_CACHE_GOALS = 512;
 
     RoadGraph(String mapCode, int version, Map<String, Node> nodes, Map<String, List<Edge>> outgoing) {
         this.mapCode = mapCode;
         this.version = version;
         this.nodes = Map.copyOf(nodes);
         this.outgoing = Map.copyOf(outgoing);
-        this.minWeight = outgoing.values().stream().flatMap(List::stream).mapToDouble(Edge::weight).min().orElse(1);
         this.corridorByPath = Map.copyOf(findCorridors());
+        for (String code : this.nodes.keySet().stream().sorted().toList()) {
+            index.put(code, incoming.size());
+            incoming.add(new ArrayList<>());
+        }
+        this.outgoing.values().stream().flatMap(List::stream)
+                .filter(e -> index.containsKey(e.to()))
+                .forEach(e -> incoming.get(index.get(e.to())).add(e));
     }
 
     public String mapCode() {
@@ -148,9 +167,55 @@ public final class RoadGraph {
         return e.from().equals(node) ? e.to() : e.from();
     }
 
-    /** Smallest weight factor in the graph; keeps the A* heuristic admissible. */
-    double minWeight() {
-        return minWeight;
+    /**
+     * The least sum of length × weight factor over the edges of any way from {@code from} to
+     * {@code goal}, {@link Double#POSITIVE_INFINITY} if there is none. Divided by the speed it is a
+     * lower bound of the travel time that never overestimates (turns, speed limits and penalties only
+     * add to it), so A* can use it as an exact-distance heuristic. Found by one Dijkstra search
+     * backwards from the goal and kept for the goals used most recently, as in the Reverse Resumable
+     * A* of Silver, "Cooperative Pathfinding" (AIIDE 2005). Thread-safe.
+     */
+    public double weightedDistance(String from, String goal) {
+        Integer i = index.get(from);
+        if (i == null || !index.containsKey(goal)) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double[] distances;
+        synchronized (distancesTo) {
+            distances = distancesTo.get(goal);
+        }
+        if (distances == null) {
+            distances = backwardsFrom(goal);
+            synchronized (distancesTo) {
+                distancesTo.put(goal, distances);
+            }
+        }
+        return distances[i];
+    }
+
+    private double[] backwardsFrom(String goal) {
+        double[] distances = new double[incoming.size()];
+        Arrays.fill(distances, Double.POSITIVE_INFINITY);
+        int start = index.get(goal);
+        distances[start] = 0;
+        PriorityQueue<double[]> open = new PriorityQueue<>((a, b) -> Double.compare(a[0], b[0]));
+        open.add(new double[] {0, start});
+        while (!open.isEmpty()) {
+            double[] current = open.poll();
+            int node = (int) current[1];
+            if (current[0] > distances[node]) {
+                continue;
+            }
+            for (Edge e : incoming.get(node)) {
+                Integer previous = index.get(e.from());
+                double d = current[0] + e.length() * e.weight();
+                if (previous != null && d < distances[previous]) {
+                    distances[previous] = d;
+                    open.add(new double[] {d, previous});
+                }
+            }
+        }
+        return distances;
     }
 
     /** @param mutexAreas codes of the mutex areas the point lies in */
@@ -186,8 +251,21 @@ public final class RoadGraph {
      * @param startHeading  heading in radians when leaving {@code from}
      * @param endHeading    heading in radians when arriving at {@code to}
      * @param mutexAreas    mutex areas the edge touches
+     * @param vehicleTypes  vehicle type codes allowed on the path; empty means all
      */
     public record Edge(String pathCode, String from, String to, double length, Double maxSpeed, double weight,
-            List<PositionDto> controlPoints, double startHeading, double endHeading, Set<String> mutexAreas) {
+            List<PositionDto> controlPoints, double startHeading, double endHeading, Set<String> mutexAreas,
+            Set<String> vehicleTypes) {
+
+        public Edge(String pathCode, String from, String to, double length, Double maxSpeed, double weight,
+                List<PositionDto> controlPoints, double startHeading, double endHeading, Set<String> mutexAreas) {
+            this(pathCode, from, to, length, maxSpeed, weight, controlPoints, startHeading, endHeading, mutexAreas,
+                    Set.of());
+        }
+
+        /** A vehicle of unknown type ({@code null}) may only use paths open to all types. */
+        public boolean allows(String vehicleType) {
+            return vehicleTypes.isEmpty() || vehicleType != null && vehicleTypes.contains(vehicleType);
+        }
     }
 }

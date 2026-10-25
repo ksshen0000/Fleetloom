@@ -1,0 +1,29 @@
+# A mixed fleet in the warehouse of scenario-warehouse.yaml (deploy/examples/setup-demo-fleet.sh):
+# shelves are moved by three kinds of jacking AGV, pallets by forklifts only. Dispatch matches each
+# order to a vehicle that can carry it, at the vehicle's own speed; traffic keeps the forklifts and
+# the heavy AGV out of the narrow cross aisle WN4-WM-WS4, so they take the loop. Besides these the
+# jacking AGVs AGV-001/002 of the default simulator are about. Run it with
+#   deploy/examples/run-scenario.sh deploy/examples/scenario-mixed-fleet.yaml
+name: mixed-fleet
+timeScale: 4
+maxDuration: 30m
+vehicles:
+  - {serialNumber: MINI-01, initialPoint: PARK1, registerAs: MINI}
+  - {serialNumber: MINI-02, initialPoint: PARK2, registerAs: MINI}
+  - {serialNumber: HEAVY-01, initialPoint: PARK3, registerAs: HEAVY}
+  - {serialNumber: FORK-01, initialPoint: P20, registerAs: FORK}
+  - {serialNumber: FORK-02, initialPoint: P22, registerAs: FORK}
+orders:
+  # shelves: in at the docks and put away, picked at the stations, some shipped, storage tidied up
+  - {name: inbound shelves, every: 25s, count: 6, type: TRANSPORT, targetZone: STORE,
+     arrive: {zone: IN, carrierType: SHELF, prefix: IB, goods: [SKU-APPLE, SKU-MANGO], quantity: 24}}
+  - {name: picking, start: 10s, every: 20s, count: 8, type: TRANSPORT, fromZone: STORE, targetZone: PICK,
+     returnAfter: 15s, maxWait: 5m}
+  - {name: outbound shelves, start: 40s, every: 25s, count: 6, type: TRANSPORT, fromZone: STORE,
+     targetZone: OUT, depart: 10s, maxWait: 5m}
+  - {name: transfer, start: 60s, every: 60s, count: 3, type: TRANSPORT, fromZone: STORE, targetZone: STORE}
+  # pallets: in at the docks, stored in the grid yard (zone A), shipped from the docks again
+  - {name: inbound pallets, start: 5s, every: 40s, count: 4, type: TRANSPORT, targetZone: A,
+     arrive: {zone: IN, carrierType: PALLET, prefix: IP, goods: [SKU-RICE], quantity: 40}, maxWait: 5m}
+  - {name: outbound pallets, start: 30s, every: 40s, count: 4, type: TRANSPORT, fromZone: A, sku: SKU-RICE,
+     targetZone: OUT, depart: 10s, maxWait: 5m}

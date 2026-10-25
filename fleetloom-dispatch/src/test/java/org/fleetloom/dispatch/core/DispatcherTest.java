@@ -71,6 +71,49 @@ class DispatcherTest {
         assertThat(h.dispatcher().get(order.orderNo()).assignedVehicle()).isEqualTo("NEAR");
     }
 
+    /**
+     * Orders that waited together are matched with the vehicles as a whole: taking the nearest vehicle
+     * for the older order (V1, 4 m from P00) would send V2 from P20 all the way to P02.
+     */
+    @Test
+    void waitingOrdersAndVehiclesAreMatchedAtTheLeastTotalDrive() {
+        DispatchHarness h = grid().vehicle("V1", "P01").vehicle("V2", "P20");
+        h.resource.carrier("C2", "SHELF", "L02");
+        h.run(0.2);
+        h.dispatcher().setAccepting("V1", false);
+        h.dispatcher().setAccepting("V2", false);
+        OrderViewDto first = h.dispatcher().create(transport("C1", "L21"));
+        OrderViewDto second = h.dispatcher().create(transport("C2", "L10"));
+
+        h.dispatcher().setAccepting("V1", true);
+        h.dispatcher().setAccepting("V2", true);
+        h.run(1.1);
+
+        assertThat(h.dispatcher().get(first.orderNo()).assignedVehicle()).isEqualTo("V2");
+        assertThat(h.dispatcher().get(second.orderNo()).assignedVehicle()).isEqualTo("V1");
+        assertThat(h.orderReaches(first.orderNo(), OrderStatus.COMPLETED, 120)).isTrue();
+        assertThat(h.orderReaches(second.orderNo(), OrderStatus.COMPLETED, 120)).isTrue();
+    }
+
+    /** With fewer vehicles than orders, an order that has waited long goes before a nearer, newer one. */
+    @Test
+    void olderOrdersAreNotStarvedByNearerOnes() {
+        DispatchHarness h = grid().vehicle("AGV-1", "P01");
+        h.resource.carrier("C2", "SHELF", "L02");
+        h.resource.carrier("C3", "SHELF", "L22");
+        h.run(0.2);
+        h.dispatcher().setAccepting("AGV-1", false);
+        OrderViewDto far = h.dispatcher().create(transport("C3", "L20"));
+        h.run(30);
+        OrderViewDto near = h.dispatcher().create(transport("C2", "L10"));
+
+        h.dispatcher().setAccepting("AGV-1", true);
+        h.run(1.1);
+
+        assertThat(h.dispatcher().get(far.orderNo()).status()).isEqualTo(OrderStatus.EXECUTING);
+        assertThat(h.dispatcher().get(near.orderNo()).status()).isEqualTo(OrderStatus.QUEUED);
+    }
+
     @Test
     void higherPriorityGoesFirst() {
         DispatchHarness h = grid().vehicle("AGV-1", "P11");

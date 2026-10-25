@@ -46,7 +46,7 @@ final class FleetVehicles implements KnownVehicles {
                     .filter(p -> Math.hypot(p.x() - v.x(), p.y() - v.y()) <= nodeTolerance)
                     .map(p -> v.lastNodeId()).orElse(null);
             result.add(new SimulatorProperties.VehicleConfig(v.serialNumber(), point, v.x(), v.y(), v.theta(),
-                    v.battery()));
+                    v.battery(), null));
         }
         return result;
     }

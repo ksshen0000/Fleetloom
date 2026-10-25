@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { dispatchApi, fleetApi, mapsApi, storageApi, trafficApi } from '@/api'
-import type { DispatchVehicle, MapTopology, MapView, OrderStatus, OrderView, Reservation, RouteView, StorageLocation, VehicleStatus } from '@/api/types'
+import { dispatchApi, fleetApi, mapsApi, registryApi, storageApi, trafficApi } from '@/api'
+import type { DispatchVehicle, MapTopology, MapView, OrderStatus, OrderView, Reservation, RouteView, StorageLocation, VehicleStatus, VehicleType } from '@/api/types'
 import MapCanvas, { type RouteMarker, type VehicleMarker } from '@/components/map/MapCanvas.vue'
 import { act, confirm } from '@/composables/notify'
 import { useAnimationClock, usePolling } from '@/composables/usePolling'
@@ -59,6 +59,18 @@ const live = usePolling(async () => {
   dispatchVehicles.value = dv
 }, () => (push.status.value === 'online' ? 5000 : 1000))
 
+// vehicle type of each vehicle, by manufacturer/serial number: its footprint and name on the map
+const typesByVehicle = ref(new Map<string, VehicleType>())
+usePolling(async () => {
+  const [registered, types] = await Promise.all([registryApi.vehicles(), registryApi.types()])
+  const byCode = new Map(types.map((t) => [t.code, t]))
+  typesByVehicle.value = new Map(registered.flatMap((r) => {
+    const t = byCode.get(r.typeCode)
+    return t ? [[`${r.manufacturer}/${r.serialNumber}`, t] as const] : []
+  }))
+}, 30000)
+const typeOf = (v: VehicleStatus) => typesByVehicle.value.get(`${v.manufacturer}/${v.serialNumber}`)
+
 const locationPolling = usePolling(async () => {
   if (mapCode.value) {
     locations.value = await storageApi.locations({ map: mapCode.value })
@@ -106,6 +118,7 @@ const markers = computed<VehicleMarker[]>(() => {
     .filter((v) => v.mapCode === mapCode.value && v.positionInitialized)
     .map((v) => {
       const pose = interpolator.at(v.code, now.value) ?? v
+      const type = typeOf(v)
       return {
         code: v.code,
         x: pose.x,
@@ -114,6 +127,9 @@ const markers = computed<VehicleMarker[]>(() => {
         color: colorOf(v.code),
         loaded: v.loadIds.length > 0,
         dimmed: v.connection !== 'ONLINE',
+        length: type?.length,
+        width: type?.width,
+        caption: type?.name,
       }
     })
 })
@@ -205,6 +221,7 @@ async function cancelRoute(code: string) {
             <div class="row">
               <span class="dot" :style="{ background: colorOf(v.code) }" />
               <b>{{ v.code }}</b>
+              <el-tag v-if="typeOf(v)" size="small" type="info">{{ typeOf(v)!.name }}</el-tag>
               <el-tag size="small" :type="v.connection === 'ONLINE' ? 'success' : 'danger'">{{ v.connection }}</el-tag>
               <el-tag v-if="v.paused" size="small" type="warning">暂停</el-tag>
               <el-tag v-if="v.charging" size="small" type="success">充电中</el-tag>

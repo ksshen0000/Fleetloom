@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import org.fleetloom.common.error.BizException;
@@ -46,8 +47,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Turns transport orders into vehicle work (requirements DSP-01..10): validates and locks the storage
- * side, picks the cheapest suitable vehicle, sends it leg by leg through the traffic service, records
- * pick-up and drop-off, and sends idle vehicles with a low battery to charge.
+ * side, matches waiting orders with suitable vehicles at the least total empty drive, sends each vehicle
+ * leg by leg through the traffic service, records pick-up and drop-off, and sends idle vehicles with a
+ * low battery to charge.
  *
  * <p>Not thread-safe by design: one thread drives it, so a vehicle can never get two orders.
  */
@@ -67,6 +69,9 @@ public final class Dispatcher {
      */
     static final Set<String> PASSING = Set.of("UNAVAILABLE", "FLEET_UNAVAILABLE", "MAP_UNAVAILABLE", "VEHICLE_UNKNOWN");
     static final Duration RETRY_PASSING_FOR = Duration.ofMinutes(2);
+
+    /** How many seconds of empty drive one second of waiting makes up for, see {@link #assignWaitingOrders}. */
+    static final double AGING_SECONDS_PER_SECOND = 1.0;
 
     /** Order numbers of the parking orders dispatch makes up itself (DSP-08). */
     static final String PARKING = "PK-";
@@ -394,7 +399,7 @@ public final class Dispatcher {
             log.warn("could not find a place for {} to give way: {}", blocker.code, e.getMessage());
             return;
         }
-        Optional<String> spot = nearest(map, blocker.status.lastNodeId(), free);
+        Optional<String> spot = nearest(blocker, free);
         if (spot.isEmpty()) {
             log.warn("{} blocks {} but there is no free point to move it to", blocker.code, event.vehicleCode());
             return;
@@ -503,20 +508,64 @@ public final class Dispatcher {
         }
     }
 
+    /**
+     * DSP-04: queued orders get vehicles in batches, priority by priority, highest first. Within one
+     * priority (and map) the orders and the free vehicles are matched so that the sum of the vehicles'
+     * empty drives to the first leg is least (the linear assignment problem, see {@link Assignment}),
+     * instead of each order in turn taking the vehicle nearest to it: that greedy order can leave a later
+     * order with a vehicle from the far end of the site. When there are more orders than vehicles, every
+     * second an order has waited counts as {@link #AGING_SECONDS_PER_SECOND} seconds less drive, so that
+     * orders far from the vehicles still get served ("aging" against starvation).
+     */
     private void assignWaitingOrders() {
         refreshRegistryIfDue(false);
-        List<TransportOrder> queued = active.values().stream()
+        Map<Integer, Map<String, List<TransportOrder>>> tiers = new TreeMap<>(Comparator.reverseOrder());
+        active.values().stream()
                 .filter(o -> o.status == OrderStatus.QUEUED)
-                .sorted(Comparator.comparingInt((TransportOrder o) -> -o.priority).thenComparing(o -> o.createdAt))
+                .sorted(Comparator.comparing((TransportOrder o) -> o.createdAt))
+                .forEach(o -> tiers.computeIfAbsent(o.priority, k -> new LinkedHashMap<>())
+                        .computeIfAbsent(o.mapCode, k -> new ArrayList<>()).add(o));
+        for (Map<String, List<TransportOrder>> byMap : tiers.values()) {
+            byMap.forEach(this::assignBatch);
+        }
+    }
+
+    private void assignBatch(String mapCode, List<TransportOrder> batch) {
+        List<DispatchVehicle> free = vehicles.values().stream()
+                .filter(v -> unavailableReason(v, null) == null && mapCode != null && mapCode.equals(v.status.mapCode()))
                 .toList();
-        for (TransportOrder order : queued) {
-            List<DispatchVehicle> candidates = vehicles.values().stream()
-                    .filter(v -> unavailableReason(v, order) == null)
-                    .toList();
-            if (candidates.isEmpty()) {
-                continue;
+        if (free.isEmpty()) {
+            return;
+        }
+        List<String> points = batch.stream().map(o -> o.leg().point()).distinct().toList();
+        List<List<Double>> seconds;
+        try {
+            // per vehicle: its type's speed and the paths open to its type
+            seconds = traffic.costs(new CostQueryDto(mapCode, free.stream().map(v -> v.status.lastNodeId()).toList(),
+                    points, free.stream().map(v -> v.code).toList())).seconds();
+        } catch (RemoteCallException e) {
+            log.warn("could not get travel costs: {}", e.getMessage());
+            return;
+        }
+        Instant now = clock.instant();
+        double[][] cost = new double[batch.size()][free.size()];
+        for (int i = 0; i < batch.size(); i++) {
+            TransportOrder order = batch.get(i);
+            int point = points.indexOf(order.leg().point());
+            double waited = Math.max(0, Duration.between(order.createdAt, now).toMillis() / 1000.0);
+            for (int j = 0; j < free.size(); j++) {
+                DispatchVehicle v = free.get(j);
+                Double drive = seconds.get(j).get(point);
+                cost[i][j] = drive == null || unavailableReason(v, order) != null ? Assignment.FORBIDDEN
+                        // a fuller battery breaks ties, as it did when the nearest vehicle was picked
+                        : drive - AGING_SECONDS_PER_SECOND * waited - v.status.battery() * 1e-6;
             }
-            cheapest(order.mapCode, candidates, order.leg().point()).ifPresent(v -> assign(order, v));
+        }
+        int[] match = Assignment.solve(cost);
+        for (int i = 0; i < batch.size(); i++) {
+            if (match[i] >= 0) {
+                assign(batch.get(i), free.get(match[i]));
+            }
         }
     }
 
@@ -538,7 +587,7 @@ public final class Dispatcher {
                 log.warn("could not look up charging points of map {}: {}", s.mapCode(), e.getMessage());
                 continue;
             }
-            Optional<String> point = nearest(s.mapCode(), s.lastNodeId(), free);
+            Optional<String> point = nearest(v, free);
             if (point.isEmpty()) {
                 continue;
             }
@@ -596,7 +645,7 @@ public final class Dispatcher {
             Set<String> taken = new HashSet<>();
             vehicles.values().stream().filter(o -> o != v).forEach(o -> taken.add(o.status.lastNodeId()));
             active.values().forEach(o -> o.legs.forEach(l -> taken.add(l.point())));
-            Optional<String> spot = nearest(s.mapCode(), s.lastNodeId(), parking.stream().filter(p -> !taken.contains(p)).toList());
+            Optional<String> spot = nearest(v, parking.stream().filter(p -> !taken.contains(p)).toList());
             if (spot.isEmpty()) {
                 continue;
             }
@@ -856,36 +905,14 @@ public final class Dispatcher {
                 && s.lastNodeId() != null && !s.lastNodeId().isEmpty();
     }
 
-    /** The candidate with the lowest travel cost to {@code point} (requirement DSP-04). */
-    private Optional<DispatchVehicle> cheapest(String mapCode, List<DispatchVehicle> candidates, String point) {
-        try {
-            List<Double> costs = traffic.costs(new CostQueryDto(mapCode,
-                            candidates.stream().map(v -> v.status.lastNodeId()).toList(), List.of(point)))
-                    .seconds().stream().map(List::getFirst).toList();
-            DispatchVehicle best = null;
-            double bestCost = Double.POSITIVE_INFINITY;
-            for (int i = 0; i < candidates.size(); i++) {
-                Double cost = costs.get(i);
-                DispatchVehicle v = candidates.get(i);
-                if (cost != null && (cost < bestCost || (cost == bestCost && best != null
-                        && v.status.battery() > best.status.battery()))) {
-                    best = v;
-                    bestCost = cost;
-                }
-            }
-            return Optional.ofNullable(best);
-        } catch (RemoteCallException e) {
-            log.warn("could not get travel costs: {}", e.getMessage());
-            return Optional.empty();
-        }
-    }
-
-    private Optional<String> nearest(String mapCode, String from, List<String> points) {
+    /** The point {@code v} reaches soonest from where it stands. */
+    private Optional<String> nearest(DispatchVehicle v, List<String> points) {
         if (points.isEmpty()) {
             return Optional.empty();
         }
         try {
-            List<Double> costs = traffic.costs(new CostQueryDto(mapCode, List.of(from), points)).seconds().getFirst();
+            List<Double> costs = traffic.costs(new CostQueryDto(v.status.mapCode(), List.of(v.status.lastNodeId()), points,
+                    List.of(v.code))).seconds().getFirst();
             String best = null;
             double bestCost = Double.POSITIVE_INFINITY;
             for (int i = 0; i < points.size(); i++) {

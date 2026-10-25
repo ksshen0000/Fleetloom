@@ -71,7 +71,8 @@ public final class RoadGraphBuilder {
             endHeading = startHeading;
         }
         return new RoadGraph.Edge(path.code(), from.code(), to.code(), length, path.maxSpeed(), weight,
-                List.copyOf(controls), startHeading, endHeading, Set.copyOf(areas));
+                List.copyOf(controls), startHeading, endHeading, Set.copyOf(areas),
+                path.allowedVehicleTypes() == null ? Set.of() : Set.copyOf(path.allowedVehicleTypes()));
     }
 
     private static void add(Map<String, List<RoadGraph.Edge>> outgoing, RoadGraph.Edge edge) {

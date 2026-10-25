@@ -83,6 +83,7 @@ public class TrafficTuning {
                 v.containsKey("blockedEventAfterSeconds")
                         ? Duration.ofSeconds(Long.parseLong(v.get("blockedEventAfterSeconds"))) : s.blockedEventAfter(),
                 v.containsKey("replanAfterSeconds")
-                        ? Duration.ofSeconds(Long.parseLong(v.get("replanAfterSeconds"))) : s.replanAfter());
+                        ? Duration.ofSeconds(Long.parseLong(v.get("replanAfterSeconds"))) : s.replanAfter(),
+                s.counterflowPenalty(), s.followPenalty());
     }
 }

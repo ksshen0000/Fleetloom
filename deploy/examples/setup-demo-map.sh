@@ -3,7 +3,8 @@
 # localhost:8081. Two parts:
 #   - a 3x3 grid of points 4 m apart (P00..P22), all paths both ways, charging point CH1 left of P00
 #   - east of it a small warehouse with one-way aisles: a loop (WS* eastbound on y=0, WE* north,
-#     WN* westbound on y=12, WW* south) with a southbound cross aisle WN4-WM-WS4, and dead-end bays
+#     WN* westbound on y=12, WW* south) with a narrow southbound cross aisle WN4-WM-WS4 (only vehicle
+#     types JACK and MINI, see setup-demo-fleet.sh), and dead-end bays
 #     off the aisles: storage ST01..ST12, inbound docks IN1..3 (north wall), outbound docks OUT1..3
 #     (south wall), picking stations PS1/PS2 and charger CH2 (east wall), parking PARK1..3.
 #     It is entered from P02 and left towards P22.

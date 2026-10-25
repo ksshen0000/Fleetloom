@@ -73,9 +73,10 @@ public record SimulatorProperties(
     /**
      * Where a vehicle starts: on {@code initialPoint} of the map, or at {@code x}/{@code y}.
      *
-     * @param battery initial charge in percent, full when absent
+     * @param battery  initial charge in percent, full when absent
+     * @param maxSpeed m/s; when absent that of the vehicle's registered type, else {@code profile.maxSpeed}
      */
     public record VehicleConfig(String serialNumber, String initialPoint, Double x, Double y,
-            @DefaultValue("0") double theta, Double battery) {
+            @DefaultValue("0") double theta, Double battery, Double maxSpeed) {
     }
 }

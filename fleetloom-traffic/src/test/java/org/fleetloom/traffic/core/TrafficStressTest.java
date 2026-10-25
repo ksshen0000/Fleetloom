@@ -2,6 +2,7 @@ package org.fleetloom.traffic.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,13 +33,18 @@ class TrafficStressTest {
         assertThat(h.minDistance()).isLessThan(1.0);
     }
 
+    /** Reservations, corridor locks, detours and deadlock resolution alone, without the flow penalties. */
+    private static final TrafficSettings RESERVATIONS_ONLY = new TrafficSettings(3, 5.0, 2.0, 1.0, 30.0, 0.1,
+            Duration.ofSeconds(5), Duration.ofSeconds(10), 0, 0);
+
     /**
      * Four vehicles keep getting random targets on a 4×4 grid for ten simulated minutes. They must never
-     * come closer than 2 m, and must keep making progress.
+     * come closer than 2 m, and must keep making progress. The counts are for this one seed and without
+     * flow penalties; TrafficBenchmark compares settings over many seeds.
      */
     @Test
     void randomTrafficStaysSafeAndKeepsMoving() {
-        TrafficHarness h = new TrafficHarness(TestMaps.grid(4, 4, 4))
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(4, 4, 4), RESERVATIONS_ONLY)
                 .vehicle("V1", "P00").vehicle("V2", "P03").vehicle("V3", "P30").vehicle("V4", "P33");
         int[] counts = randomTraffic(h, List.of("V1", "V2", "V3", "V4"), 7);
 
@@ -59,6 +65,21 @@ class TrafficStressTest {
         // 73 without resolving deadlocks, 95 with
         assertThat(counts[1]).isGreaterThan(85);
         assertThat(counts[1]).isGreaterThanOrEqualTo(counts[0] - 6);
+    }
+
+    /**
+     * Once, V4 backed off out of a deadlock and waited for V3 to pass, while V3 waited for V1 and V1 for
+     * the point V4 stood on. Waiting to let others pass did not count in the wait-for graph, so that
+     * cycle was never found and the three stood still for the remaining eight minutes (24 arrivals).
+     */
+    @Test
+    void vehicleLettingOthersPassDoesNotWaitForEver() {
+        TrafficHarness h = new TrafficHarness(TestMaps.grid(4, 4, 4), RESERVATIONS_ONLY).vehicle("V1", "P00")
+                .vehicle("V2", "P03").vehicle("V3", "P30").vehicle("V4", "P33").vehicle("V5", "P11").vehicle("V6", "P12");
+        int[] counts = randomTraffic(h, List.of("V1", "V2", "V3", "V4", "V5", "V6"), 7);
+
+        assertThat(h.minDistance()).isGreaterThan(2.0);
+        assertThat(counts[1]).isGreaterThan(80);
     }
 
     /** Ten simulated minutes of random targets; returns the routes requested and the arrivals. */

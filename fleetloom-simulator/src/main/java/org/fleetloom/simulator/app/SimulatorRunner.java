@@ -8,6 +8,7 @@ import org.fleetloom.simulator.core.Pose;
 import org.fleetloom.simulator.core.SimulatedAgv;
 import org.fleetloom.simulator.core.SimulationEngine;
 import org.fleetloom.simulator.core.SiteMap;
+import org.fleetloom.simulator.core.VehicleProfile;
 import org.fleetloom.simulator.core.VirtualVehicle;
 import org.fleetloom.vda5050.client.AgvClient;
 import org.fleetloom.vda5050.transport.MqttTransport;
@@ -27,6 +28,7 @@ public class SimulatorRunner implements SmartLifecycle {
     private final SimulatorProperties properties;
     private final MapSource mapSource;
     private final KnownVehicles knownVehicles;
+    private final VehicleSpeeds vehicleSpeeds;
     private final SimulationEngine engine;
     private volatile SiteMap siteMap;
     private volatile boolean running;
@@ -34,12 +36,15 @@ public class SimulatorRunner implements SmartLifecycle {
     /**
      * @param mapSource     where the map comes from; none: vehicles run without one
      * @param knownVehicles vehicles of an earlier run to start again; none: only the configured ones
+     * @param vehicleSpeeds speeds of the registered vehicle types; none: vehicles without a speed of
+     *                      their own all drive at {@code profile.maxSpeed}
      */
     public SimulatorRunner(SimulatorProperties properties, ObjectProvider<MapSource> mapSource,
-            ObjectProvider<KnownVehicles> knownVehicles) {
+            ObjectProvider<KnownVehicles> knownVehicles, ObjectProvider<VehicleSpeeds> vehicleSpeeds) {
         this.properties = properties;
         this.mapSource = mapSource.getIfAvailable();
         this.knownVehicles = knownVehicles.getIfAvailable();
+        this.vehicleSpeeds = vehicleSpeeds.getIfAvailable();
         this.engine = new SimulationEngine(properties.tickMillis(), properties.timeScale());
     }
 
@@ -87,8 +92,8 @@ public class SimulatorRunner implements SmartLifecycle {
             throw new IllegalArgumentException("vehicle " + config.serialNumber() + " already exists");
         }
         Pose pose = initialPose(config);
-        VirtualVehicle vehicle = new VirtualVehicle(config.serialNumber(), properties.profile().toVehicleProfile(),
-                siteMap, pose, config.initialPoint());
+        VirtualVehicle vehicle = new VirtualVehicle(config.serialNumber(), profile(config), siteMap, pose,
+                config.initialPoint());
         if (config.battery() != null) {
             vehicle.setBattery(config.battery());
         }
@@ -132,6 +137,19 @@ public class SimulatorRunner implements SmartLifecycle {
                 log.warn("could not restore vehicle {}: {}", config.serialNumber(), e.getMessage());
             }
         }
+    }
+
+    private VehicleProfile profile(SimulatorProperties.VehicleConfig config) {
+        VehicleProfile profile = properties.profile().toVehicleProfile();
+        Double speed = config.maxSpeed();
+        if (speed == null && vehicleSpeeds != null) {
+            try {
+                speed = vehicleSpeeds.maxSpeed(properties.manufacturer(), config.serialNumber()).orElse(null);
+            } catch (RuntimeException e) {
+                log.warn("could not look up the vehicle type of {}: {}", config.serialNumber(), e.getMessage());
+            }
+        }
+        return speed == null ? profile : profile.withMaxSpeed(speed);
     }
 
     private Pose initialPose(SimulatorProperties.VehicleConfig config) {

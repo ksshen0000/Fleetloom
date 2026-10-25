@@ -13,6 +13,11 @@ export interface VehicleMarker {
   color: string
   loaded?: boolean
   dimmed?: boolean
+  /** footprint in m, default 1.2 × 0.8 */
+  length?: number
+  width?: number
+  /** shown under the code, e.g. the vehicle type */
+  caption?: string
 }
 
 /** A route to highlight: the driven part is solid, the rest dashed. */
@@ -211,8 +216,8 @@ const locationShapes = computed(() => {
 const vehicleShapes = computed(() =>
   props.vehicles.map((v) => {
     const s = toScreen(view.value, v)
-    const length = Math.max(14, 1.2 * view.value.scale)
-    const breadth = Math.max(10, 0.8 * view.value.scale)
+    const length = Math.max(14, (v.length ?? 1.2) * view.value.scale)
+    const breadth = Math.max(10, (v.width ?? 0.8) * view.value.scale)
     return {
       code: v.code,
       x: s.x,
@@ -223,6 +228,7 @@ const vehicleShapes = computed(() =>
       color: v.color,
       opacity: v.dimmed ? 0.4 : 1,
       loaded: v.loaded,
+      caption: v.caption,
     }
   }),
 )
@@ -350,7 +356,7 @@ function dragWorld(e: { target: { x(): number; y(): number } }): Position {
         <v-text
           v-for="v in vehicleShapes"
           :key="'vl' + v.code"
-          :config="{ x: v.x + v.length / 2 + 2, y: v.y - v.breadth - 6, text: v.code, fontSize: 12, fontStyle: 'bold', fill: v.color }"
+          :config="{ x: v.x + v.length / 2 + 2, y: v.y - v.breadth - 6, text: v.caption ? `${v.code} · ${v.caption}` : v.code, fontSize: 12, fontStyle: 'bold', fill: v.color }"
         />
       </v-layer>
     </v-stage>

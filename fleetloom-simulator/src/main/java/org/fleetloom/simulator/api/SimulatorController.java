@@ -65,7 +65,7 @@ public class SimulatorController {
         for (NewVehicle v : request) {
             try {
                 added.add(runner.addVehicle(new SimulatorProperties.VehicleConfig(v.serialNumber(), v.initialPoint(),
-                        v.x(), v.y(), v.theta() == null ? 0 : v.theta(), v.battery())));
+                        v.x(), v.y(), v.theta() == null ? 0 : v.theta(), v.battery(), v.maxSpeed())));
             } catch (IllegalArgumentException e) {
                 throw new BizException(CommonErrorCode.BAD_REQUEST, e.getMessage());
             }
@@ -106,9 +106,11 @@ public class SimulatorController {
     /**
      * @param initialPoint a point of the simulator's map; or {@code x}/{@code y}
      * @param battery      percent, full when absent
+     * @param maxSpeed     m/s; when absent that of the vehicle's registered type
      */
     public record NewVehicle(@NotBlank @Pattern(regexp = "[A-Za-z0-9_.:-]{1,64}") String serialNumber,
-            String initialPoint, Double x, Double y, Double theta, @DecimalMin("0") @DecimalMax("100") Double battery) {
+            String initialPoint, Double x, Double y, Double theta, @DecimalMin("0") @DecimalMax("100") Double battery,
+            @DecimalMin(value = "0", inclusive = false) @DecimalMax("10") Double maxSpeed) {
     }
 
     @PostMapping("/map/reload")

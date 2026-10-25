@@ -114,18 +114,19 @@ public class ScenarioRunner implements AutoCloseable {
         if (simulator.engine().find(v.serialNumber()).isPresent()) {
             return; // still there from an earlier run: it goes on from where it is
         }
-        try {
-            simulator.addVehicle(new SimulatorProperties.VehicleConfig(v.serialNumber(), v.initialPoint(), v.x(), v.y(),
-                    0, v.battery()));
-        } catch (IllegalArgumentException e) {
-            run.error("vehicle " + v.serialNumber() + ": " + e.getMessage());
-        }
+        // registered first, so the vehicle drives at the speed of its type
         if (v.registerAs() != null) {
             try {
                 platform.registerVehicle(v.serialNumber(), v.registerAs(), manufacturer, v.initialPoint());
             } catch (RuntimeException e) {
                 run.error("could not register " + v.serialNumber() + ": " + e.getMessage());
             }
+        }
+        try {
+            simulator.addVehicle(new SimulatorProperties.VehicleConfig(v.serialNumber(), v.initialPoint(), v.x(), v.y(),
+                    0, v.battery(), v.maxSpeed()));
+        } catch (IllegalArgumentException e) {
+            run.error("vehicle " + v.serialNumber() + ": " + e.getMessage());
         }
     }
 

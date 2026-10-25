@@ -8,6 +8,7 @@ import org.fleetloom.simulator.app.KnownVehicles;
 import org.fleetloom.simulator.app.MapSource;
 import org.fleetloom.simulator.app.SimulatorProperties;
 import org.fleetloom.simulator.app.SimulatorRunner;
+import org.fleetloom.simulator.app.VehicleSpeeds;
 import org.fleetloom.simulator.scenario.HttpPlatform;
 import org.fleetloom.simulator.scenario.ScenarioRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -33,6 +34,11 @@ public class PlatformConfiguration {
     KnownVehicles fleetVehicles(SimulatorProperties simulator, PlatformProperties platform, RestClient.Builder rest) {
         return new FleetVehicles(HttpClients.withTimeouts(rest.clone(), platform.fleetUrl()).build(),
                 simulator.profile().nodeTolerance());
+    }
+
+    @Bean
+    VehicleSpeeds registrySpeeds(PlatformProperties platform, RestClient.Builder rest) {
+        return new RegistrySpeeds(HttpClients.withTimeouts(rest.clone(), platform.resourceUrl()).build());
     }
 
     @Bean(destroyMethod = "close")

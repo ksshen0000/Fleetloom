@@ -12,6 +12,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.fleetloom.common.api.ApiResponse;
 import org.fleetloom.common.error.BizException;
+import org.fleetloom.common.error.CommonErrorCode;
 import org.fleetloom.contracts.fleet.VehicleActionDto;
 import org.fleetloom.contracts.traffic.CostMatrixDto;
 import org.fleetloom.contracts.traffic.CostQueryDto;
@@ -85,7 +86,11 @@ public class TrafficApiController {
 
     @PostMapping("/costs")
     public ApiResponse<CostMatrixDto> costs(@Valid @RequestBody CostQuery query) {
-        return ApiResponse.ok(engine.call(c -> c.costs(new CostQueryDto(query.mapCode(), query.from(), query.to()))));
+        if (query.vehicles() != null && query.vehicles().size() != query.from().size()) {
+            throw new BizException(CommonErrorCode.BAD_REQUEST, "give one vehicle per from point, or none");
+        }
+        return ApiResponse.ok(engine.call(c -> c.costs(
+                new CostQueryDto(query.mapCode(), query.from(), query.to(), query.vehicles()))));
     }
 
     @GetMapping("/reservations")
@@ -107,6 +112,8 @@ public class TrafficApiController {
             List<VehicleActionDto> targetActions) {
     }
 
-    public record CostQuery(@NotBlank String mapCode, @NotEmpty List<String> from, @NotEmpty List<String> to) {
+    /** @param vehicles optional, the vehicle standing at each {@code from} point */
+    public record CostQuery(@NotBlank String mapCode, @NotEmpty List<String> from, @NotEmpty List<String> to,
+            List<String> vehicles) {
     }
 }

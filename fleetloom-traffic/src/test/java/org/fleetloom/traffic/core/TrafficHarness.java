@@ -64,6 +64,10 @@ public final class TrafficHarness {
     }
 
     public TrafficHarness(MapTopologyDto topology, TrafficSettings settings) {
+        this(topology, settings, VehicleRegistry.NONE);
+    }
+
+    public TrafficHarness(MapTopologyDto topology, TrafficSettings settings, VehicleRegistry registry) {
         this.topology = topology;
         this.siteMap = SiteMaps.from(topology);
         this.fleet = new FleetService(new MasterClient(broker.newClient(), "uagv", clock), events, s -> { }, clock,
@@ -86,7 +90,7 @@ public final class TrafficHarness {
         };
         Supplier<MapTopologyDto> currentMap = () -> this.topology;
         this.traffic = new TrafficController(new AStarPlanner(settings.turnPenaltyPerRadian()), gateway,
-                mapCode -> currentMap.get(), events, settings, clock);
+                mapCode -> currentMap.get(), registry, events, settings, clock);
         events.subscribe(VehicleStateUpdatedEvent.TYPE, "traffic", VehicleStateUpdatedEvent.class,
                 e -> traffic.onVehicleStatus(e.payload().status()));
         events.subscribe(VehicleForgottenEvent.TYPE, "traffic", VehicleForgottenEvent.class,

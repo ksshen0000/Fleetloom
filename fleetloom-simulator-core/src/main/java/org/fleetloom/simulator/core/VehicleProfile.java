@@ -41,6 +41,11 @@ public record VehicleProfile(
                 Map.of("pick", 2.0, "drop", 2.0), Set.of());
     }
 
+    public VehicleProfile withMaxSpeed(double maxSpeed) {
+        return new VehicleProfile(maxSpeed, acceleration, deceleration, rotationSpeed, nodeTolerance, drainPerMeter,
+                drainPerSecond, chargePerSecond, defaultActionDuration, actionDurations, customActionTypes);
+    }
+
     public double durationOf(String actionType) {
         return actionDurations.getOrDefault(actionType, defaultActionDuration);
     }

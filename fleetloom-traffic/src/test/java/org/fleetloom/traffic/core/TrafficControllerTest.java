@@ -2,6 +2,7 @@ package org.fleetloom.traffic.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import java.util.List;
 import java.util.Map;
@@ -430,6 +431,33 @@ class TrafficControllerTest {
         h.runUntil(60, () -> h.arrived("AGV-1"));
         h.traffic().tick();
         assertThat(h.traffic().costs(query).seconds().getFirst().getFirst()).isEqualTo(24.0);
+    }
+
+    @Test
+    void vehiclesPlanWithTheSpeedAndPathsOfTheirType() {
+        // a 2 x 3 grid whose path P00-P01 is for jacking AGVs only
+        MapTopologyDto grid = TestMaps.grid(2, 3, 4);
+        MapTopologyDto map = new MapTopologyDto(grid.mapCode(), 1, grid.points(), grid.paths().stream()
+                .map(p -> !p.code().equals("P00-P01") ? p : new PathDto(p.code(), p.fromPoint(), p.toPoint(),
+                        p.direction(), PathShape.LINE, List.of(), null, VehicleOrientation.ANY, java.util.Set.of("JACK"),
+                        1.0, true, p.length()))
+                .toList(), List.of());
+        VehicleRegistry registry = () -> Map.of(
+                "FLEETLOOM-SIM/JACK-1", new VehicleRegistry.VehicleKind("JACK", 2.0),
+                "FLEETLOOM-SIM/FORK-1", new VehicleRegistry.VehicleKind("FORK", 1.0));
+        TrafficHarness h = new TrafficHarness(map, TrafficSettings.defaults(), registry)
+                .vehicle("FORK-1", "P00").vehicle("JACK-1", "P12");
+        h.run(0.2);
+
+        CostMatrixDto costs = h.traffic().costs(new CostQueryDto(TestMaps.MAP, List.of("P00", "P12"), List.of("P01", "P11"),
+                List.of("FORK-1", "JACK-1")));
+        double turn = Math.PI / 2 * TrafficSettings.defaults().turnPenaltyPerRadian();
+        assertThat(costs.seconds().get(0).get(0)).isCloseTo(12.0 + 2 * turn, within(1e-9)); // round via P10 and P11
+        assertThat(costs.seconds().get(1).get(1)).isEqualTo(2.0); // 4 m at 2 m/s
+
+        RouteViewDto route = h.traffic().requestRoute("FORK-1", "P02", null);
+        assertThat(route.nodes().get(1)).isEqualTo("P10"); // not the closed path P00-P01
+        assertThat(h.runUntil(60, () -> h.arrived("FORK-1"))).isTrue();
     }
 
     @Test

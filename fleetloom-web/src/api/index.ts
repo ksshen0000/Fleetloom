@@ -192,7 +192,7 @@ export const simulatorApi = {
   disconnect: (serial: string, seconds: number) =>
     call<SimVehicle>(http.post(`${S}/vehicles/${serial}/faults/disconnect`, { seconds })),
   clearFaults: (serial: string) => call<SimVehicle>(http.delete(`${S}/vehicles/${serial}/faults`)),
-  add: (vehicles: { serialNumber: string; initialPoint?: string; battery?: number }[]) =>
+  add: (vehicles: { serialNumber: string; initialPoint?: string; battery?: number; maxSpeed?: number }[]) =>
     call<SimVehicle[]>(http.post(`${S}/vehicles`, vehicles)),
   remove: (serial: string) => call<void>(http.delete(`${S}/vehicles/${serial}`)),
   mapPoints: () => call<string[]>(http.get(`${S}/map/points`)),

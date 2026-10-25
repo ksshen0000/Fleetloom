@@ -53,6 +53,29 @@ class AStarPlannerTest {
     }
 
     @Test
+    void pathsClosedToTheVehicleTypeAreLeftOut() {
+        // A-B direct, or round via C; A-B is for type JACK only
+        MapTopologyDto map = new MapTopologyDto("M", 1,
+                List.of(TestMaps.point("A", 0, 0), TestMaps.point("B", 4, 0), TestMaps.point("C", 2, 3)),
+                List.of(new PathDto("AB", "A", "B", PathDirection.BIDIRECTIONAL, PathShape.LINE, List.of(), null,
+                                VehicleOrientation.ANY, Set.of("JACK"), 1.0, true, 4.0),
+                        TestMaps.path("AC", "A", "C", PathDirection.BIDIRECTIONAL, 4),
+                        TestMaps.path("CB", "C", "B", PathDirection.BIDIRECTIONAL, 4)), List.of());
+        RoadGraph g = RoadGraphBuilder.build(map);
+        AStarPlanner planner = new AStarPlanner(0);
+
+        assertThat(planner.plan(g, new PathPlanner.Request("A", "B", 1, Set.of(), Map.of(), Map.of(), "JACK"))
+                .orElseThrow().nodes()).containsExactly("A", "B");
+        assertThat(planner.plan(g, new PathPlanner.Request("A", "B", 1, Set.of(), Map.of(), Map.of(), "FORK"))
+                .orElseThrow().nodes()).containsExactly("A", "C", "B");
+        // a vehicle of unknown type keeps to paths open to all
+        assertThat(planner.plan(g, PathPlanner.Request.simple("A", "B", 1)).orElseThrow().nodes())
+                .containsExactly("A", "C", "B");
+        assertThat(planner.costs(g, "A", List.of("B"), 2, "JACK")).containsEntry("B", 2.0);
+        assertThat(planner.costs(g, "A", List.of("B"), 2, "FORK")).containsEntry("B", 4.0);
+    }
+
+    @Test
     void avoidsBlockedResources() {
         PlannedRoute route = new AStarPlanner(2).plan(grid,
                 new PathPlanner.Request("P10", "P12", 1.0, Set.of(Resource.node("P11")), Map.of())).orElseThrow();

@@ -52,10 +52,14 @@ public final class TrafficController {
             Set.of("validationError", "orderError", "noRouteError", "orderUpdateError");
 
     static final Duration DEADLOCK_REPEAT = Duration.ofSeconds(30);
+    /** how long the vehicle types are kept, and how soon they are asked again for a vehicle not among them */
+    static final Duration REGISTRY_REFRESH = Duration.ofSeconds(30);
+    static final Duration REGISTRY_RETRY = Duration.ofSeconds(5);
 
     private final PathPlanner planner;
     private final FleetGateway fleet;
     private final MapProvider maps;
+    private final VehicleRegistry registry;
     private final EventBus events;
     private TrafficSettings settings;
     private final Clock clock;
@@ -69,12 +73,20 @@ public final class TrafficController {
     private Instant deadlockAnnouncedAt = Instant.MIN;
     /** when the current deadlock was found, or last tried to resolve */
     private Instant deadlockSince = Instant.MIN;
+    private Map<String, VehicleRegistry.VehicleKind> kinds = Map.of();
+    private Instant kindsLoadedAt = Instant.MIN;
 
     public TrafficController(PathPlanner planner, FleetGateway fleet, MapProvider maps, EventBus events,
             TrafficSettings settings, Clock clock) {
+        this(planner, fleet, maps, VehicleRegistry.NONE, events, settings, clock);
+    }
+
+    public TrafficController(PathPlanner planner, FleetGateway fleet, MapProvider maps, VehicleRegistry registry,
+            EventBus events, TrafficSettings settings, Clock clock) {
         this.planner = planner;
         this.fleet = fleet;
         this.maps = maps;
+        this.registry = registry;
         this.events = events;
         this.settings = settings;
         this.clock = clock;
@@ -235,8 +247,9 @@ public final class TrafficController {
                 penalties.put(resource, settings.occupiedPenalty());
             }
         });
+        VehicleRegistry.VehicleKind kind = kind(v);
         PlannedRoute plan = planner.plan(graph, new PathPlanner.Request(s.lastNodeId(), targetPoint,
-                        settings.defaultSpeed(), Set.of(), penalties))
+                        kind.maxSpeed(), Set.of(), penalties, flowPenalties(v, graph), kind.typeCode()))
                 .orElseThrow(() -> new BizException(TrafficErrorCode.NO_ROUTE,
                         "no route from %s to %s".formatted(s.lastNodeId(), targetPoint)));
 
@@ -290,14 +303,21 @@ public final class TrafficController {
 
     // ================================================================== queries
 
+    /**
+     * With {@code query.vehicles()}, row i is for that vehicle: at its type's speed and on the paths
+     * open to its type. Without, rows are for a vehicle of unknown type.
+     */
     public CostMatrixDto costs(CostQueryDto query) {
         RoadGraph graph = graph(query.mapCode());
         List<List<Double>> seconds = new ArrayList<>();
-        for (String from : query.from()) {
+        for (int i = 0; i < query.from().size(); i++) {
+            String from = query.from().get(i);
+            VehicleTraffic v = query.vehicles() == null ? null : vehicles.get(query.vehicles().get(i));
+            VehicleRegistry.VehicleKind kind = v == null || v.status == null ? unknownKind() : kind(v);
+            Map<String, Double> costs = planner.costs(graph, from, query.to(), kind.maxSpeed(), kind.typeCode());
             List<Double> row = new ArrayList<>();
             for (String to : query.to()) {
-                row.add(planner.plan(graph, PathPlanner.Request.simple(from, to, settings.defaultSpeed()))
-                        .map(PlannedRoute::seconds).orElse(null));
+                row.add(costs.get(to));
             }
             seconds.add(row);
         }
@@ -450,15 +470,26 @@ public final class TrafficController {
 
     /** Whether the vehicles a backed-off vehicle lets pass no longer need any point of its way on. */
     private boolean othersAreThrough(ActiveRoute r) {
+        return letPass(r).isEmpty();
+    }
+
+    /** Those of the vehicles a backed-off vehicle lets pass that still need a point of its way on. */
+    private Set<String> letPass(ActiveRoute r) {
+        Set<String> result = new HashSet<>();
         for (String code : r.holdFor) {
             VehicleTraffic o = vehicles.get(code);
             ActiveRoute other = o == null ? null : o.route;
             if (other != null && other.status.isActive() && other.plan.nodes()
                     .subList(other.passedIndex, other.plan.nodes().size()).stream().anyMatch(r.holdNodes::contains)) {
-                return false;
+                result.add(code);
             }
         }
-        return true;
+        return result;
+    }
+
+    /** Stands at the point it backed off to, letting others pass. */
+    private static boolean isHolding(ActiveRoute r) {
+        return r.holdIndex >= 0 && r.passedIndex == r.holdIndex && r.releasedIndex == r.holdIndex;
     }
 
     /** A corridor and the direction a route drives through it. */
@@ -542,8 +573,10 @@ public final class TrafficController {
         RoadGraph graph = graph(r.mapCode);
         Set<Resource> occupied = occupiedByOthers(v, graph);
         String decision = r.plan.nodes().get(r.releasedIndex);
+        VehicleRegistry.VehicleKind kind = kind(v);
         Optional<PlannedRoute> detour = planner.plan(graph,
-                new PathPlanner.Request(decision, r.target(), settings.defaultSpeed(), occupied, Map.of()));
+                new PathPlanner.Request(decision, r.target(), kind.maxSpeed(), occupied, Map.of(),
+                        flowPenalties(v, graph), kind.typeCode()));
         r.waitingSince = clock.instant();
         if (detour.isEmpty()) {
             return;
@@ -562,6 +595,48 @@ public final class TrafficController {
             log.error("could not send the detour of {}", v.code, e);
         }
         extendAndSend(v, r);
+    }
+
+    /**
+     * Soft costs that keep a new route out of the way of the routes already running, in the spirit of
+     * the conflict-avoidance costs of prioritized planning (Silver, "Cooperative Pathfinding", 2005) and
+     * the direction-aware "highways" of Cohen, Uras and Koenig (SoCS 2015), without reserving space-time:
+     * the vehicles' timing is not known well enough for that. For every other vehicle, each path still
+     * ahead of it costs {@link TrafficSettings#counterflowPenalty()} against its direction and
+     * {@link TrafficSettings#followPenalty()} along it. Against a vehicle's direction in a single-lane
+     * corridor means anywhere in that corridor, since the corridor lock keeps the whole of it.
+     */
+    private Map<RoadGraph.Edge, Double> flowPenalties(VehicleTraffic v, RoadGraph graph) {
+        double counterflow = settings.counterflowPenalty();
+        double follow = settings.followPenalty();
+        if (counterflow <= 0 && follow <= 0) {
+            return Map.of();
+        }
+        Map<RoadGraph.Edge, Double> penalties = new HashMap<>();
+        for (VehicleTraffic o : vehicles.values()) {
+            ActiveRoute r = o.route;
+            if (o == v || r == null || !r.status.isActive() || !r.mapCode.equals(graph.mapCode())) {
+                continue;
+            }
+            Set<RoadGraph.Edge> against = new HashSet<>();
+            Set<RoadGraph.Edge> along = new HashSet<>();
+            for (RoadGraph.Edge e : r.plan.edges().subList(r.passedIndex, r.plan.edges().size())) {
+                along.add(e);
+                graph.edge(e.to(), e.from()).ifPresent(against::add);
+                graph.corridor(e.pathCode()).ifPresent(c -> {
+                    int direction = c.direction(e);
+                    for (int i = 0; i < c.paths().size(); i++) {
+                        // the edge of path i that runs against the vehicle's direction through the corridor
+                        String from = c.nodes().get(direction > 0 ? i + 1 : i);
+                        String to = c.nodes().get(direction > 0 ? i : i + 1);
+                        graph.edge(from, to).ifPresent(against::add);
+                    }
+                });
+            }
+            along.forEach(e -> penalties.merge(e, follow, Double::sum));
+            against.forEach(e -> penalties.merge(e, counterflow, Double::sum));
+        }
+        return penalties;
     }
 
     /** What other vehicles hold on the map, including every path of the corridors they drive through. */
@@ -737,23 +812,32 @@ public final class TrafficController {
 
     // ================================================================== deadlocks
 
+    /**
+     * TRF-15. A vehicle waits for the one holding what it needs next, and a vehicle that backed off out
+     * of a deadlock waits for every vehicle it lets pass; vehicles on a cycle of this wait-for graph
+     * (a strongly connected component of more than one, found with Tarjan's algorithm) are deadlocked.
+     */
     private void detectDeadlocks() {
-        Map<String, String> waitsFor = new HashMap<>();
+        Map<String, Set<String>> waitsFor = new HashMap<>();
         for (VehicleTraffic v : vehicles.values()) {
-            if (v.route != null && v.route.status.isActive() && v.route.isStuck()) {
-                waitsFor.put(v.code, v.route.blockedBy);
+            ActiveRoute r = v.route;
+            if (r == null || !r.status.isActive()) {
+                continue;
+            }
+            if (r.isStuck()) {
+                waitsFor.put(v.code, Set.of(r.blockedBy));
+            } else if (isHolding(r)) {
+                waitsFor.put(v.code, letPass(r));
             }
         }
-        Set<String> cycle = new HashSet<>();
-        for (String start : waitsFor.keySet()) {
-            List<String> chain = new ArrayList<>();
-            String current = start;
-            while (current != null && !chain.contains(current)) {
-                chain.add(current);
-                current = waitsFor.get(current);
-            }
-            if (current != null) {
-                cycle.addAll(chain.subList(chain.indexOf(current), chain.size()));
+        Set<String> cycle = onCycles(waitsFor);
+        // letting others pass is what closes this cycle: drive on, and let the usual waiting sort it out
+        for (String code : cycle.stream().sorted().toList()) {
+            ActiveRoute r = vehicles.get(code).route;
+            if (isHolding(r)) {
+                log.warn("{} stops letting {} pass: they wait for each other", code, waitsFor.get(code));
+                r.holdIndex = -1;
+                extendAndSend(vehicles.get(code), r);
             }
         }
         Instant now = clock.instant();
@@ -773,6 +857,49 @@ public final class TrafficController {
             resolveDeadlock(cycle);
         }
         lastDeadlock = cycle;
+    }
+
+    /** The vehicles on a cycle of {@code waitsFor}. */
+    static Set<String> onCycles(Map<String, Set<String>> waitsFor) {
+        Map<String, Integer> index = new HashMap<>();
+        Map<String, Integer> low = new HashMap<>();
+        List<String> stack = new ArrayList<>();
+        Set<String> onStack = new HashSet<>();
+        Set<String> result = new HashSet<>();
+        for (String v : waitsFor.keySet().stream().sorted().toList()) {
+            if (!index.containsKey(v)) {
+                strongConnect(v, waitsFor, index, low, stack, onStack, result);
+            }
+        }
+        return result;
+    }
+
+    private static void strongConnect(String v, Map<String, Set<String>> waitsFor, Map<String, Integer> index,
+            Map<String, Integer> low, List<String> stack, Set<String> onStack, Set<String> result) {
+        index.put(v, index.size());
+        low.put(v, index.get(v));
+        stack.add(v);
+        onStack.add(v);
+        for (String w : waitsFor.getOrDefault(v, Set.of())) {
+            if (!index.containsKey(w)) {
+                strongConnect(w, waitsFor, index, low, stack, onStack, result);
+                low.put(v, Math.min(low.get(v), low.get(w)));
+            } else if (onStack.contains(w)) {
+                low.put(v, Math.min(low.get(v), index.get(w)));
+            }
+        }
+        if (low.get(v).equals(index.get(v))) {
+            List<String> component = new ArrayList<>();
+            String w;
+            do {
+                w = stack.removeLast();
+                onStack.remove(w);
+                component.add(w);
+            } while (!w.equals(v));
+            if (component.size() > 1) {
+                result.addAll(component);
+            }
+        }
     }
 
     /**
@@ -845,21 +972,23 @@ public final class TrafficController {
             }
         }
         String here = r.plan.nodes().get(r.releasedIndex);
+        VehicleRegistry.VehicleKind kind = kind(v);
         // breadth first over the free part of the map, nearest points first
         List<String> queue = new ArrayList<>(List.of(here));
         Set<String> seen = new HashSet<>(queue);
         for (int k = 0; k < queue.size(); k++) {
             for (RoadGraph.Edge e : graph.outgoing(queue.get(k))) {
                 RoadGraph.Node next = graph.node(e.to()).orElseThrow();
-                if (!seen.add(e.to()) || Resource.of(e).stream().anyMatch(occupied::contains)
+                if (!e.allows(kind.typeCode()) || !seen.add(e.to()) || Resource.of(e).stream().anyMatch(occupied::contains)
                         || Resource.of(next).stream().anyMatch(occupied::contains)) {
                     continue;
                 }
                 if (!needed.contains(e.to())) {
                     Optional<PlannedRoute> away = planner.plan(graph,
-                            new PathPlanner.Request(here, e.to(), settings.defaultSpeed(), occupied, Map.of()));
-                    Optional<PlannedRoute> onward = planner.plan(graph,
-                            PathPlanner.Request.simple(e.to(), r.target(), settings.defaultSpeed()));
+                            new PathPlanner.Request(here, e.to(), kind.maxSpeed(), occupied, Map.of(), Map.of(),
+                                    kind.typeCode()));
+                    Optional<PlannedRoute> onward = planner.plan(graph, new PathPlanner.Request(e.to(), r.target(),
+                            kind.maxSpeed(), Set.of(), Map.of(), Map.of(), kind.typeCode()));
                     if (away.isPresent() && onward.isPresent()) {
                         return Optional.of(new Escape(v, away.get(), onward.get()));
                     }
@@ -868,6 +997,29 @@ public final class TrafficController {
             }
         }
         return Optional.empty();
+    }
+
+    // ================================================================== vehicle types
+
+    /** Type and speed of the vehicle as registered; the default speed and no type if it is not. */
+    private VehicleRegistry.VehicleKind kind(VehicleTraffic v) {
+        String identity = v.status.manufacturer() + "/" + v.status.serialNumber();
+        Instant now = clock.instant();
+        Duration age = Duration.between(kindsLoadedAt, now);
+        if (age.compareTo(REGISTRY_REFRESH) >= 0 || (!kinds.containsKey(identity) && age.compareTo(REGISTRY_RETRY) >= 0)) {
+            kindsLoadedAt = now;
+            try {
+                kinds = Map.copyOf(registry.vehicles());
+            } catch (RuntimeException e) {
+                log.warn("vehicle registry is not available, keeping the vehicle types known: {}", e.getMessage());
+            }
+        }
+        VehicleRegistry.VehicleKind kind = kinds.get(identity);
+        return kind == null ? unknownKind() : kind;
+    }
+
+    private VehicleRegistry.VehicleKind unknownKind() {
+        return new VehicleRegistry.VehicleKind(null, settings.defaultSpeed());
     }
 
     // ================================================================== maps
